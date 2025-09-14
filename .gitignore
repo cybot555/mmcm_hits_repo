@@ -43,3 +43,30 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+
+# Build outputs
+build/
+ios/Pods/
+android/.gradle/
+android/app/build/
+
+# IDE & editor stuff
+.idea/
+.vscode/
+*.iml
+
+# Mac system files
+.DS_Store
+
+# Generated files
+flutter_export_environment.sh
+Generated.xcconfig
+
+# Coverage
+coverage/
