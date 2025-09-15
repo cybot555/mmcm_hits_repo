@@ -21,10 +21,7 @@ class MyTextfield extends StatelessWidget {
         hintText: hintText,
         filled: true,
         fillColor: Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(
-          vertical: 15,
-          horizontal: 20,
-        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12), // rounded corners
           borderSide: BorderSide.none, // remove harsh border
