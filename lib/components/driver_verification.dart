@@ -79,9 +79,9 @@ class _DriverVerificationState extends State<DriverVerification> {
             const Text(
               "DRIVER VERIFICATION REQUIRED",
               style: TextStyle(
-                color: Colors.red,
+                color: Color.fromARGB(255, 255, 17, 0),
                 fontWeight: FontWeight.bold,
-                fontSize: 14,
+                fontSize: 18,
               ),
             ),
             const SizedBox(height: 12),

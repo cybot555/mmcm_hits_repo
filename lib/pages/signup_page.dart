@@ -144,15 +144,15 @@ class _SignupPageState extends State<SignupPage> {
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(vertical: 15),
                               decoration: BoxDecoration(
-                                color: Colors.green,
+                                color: const Color.fromARGB(255, 0, 255, 8),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Center(
                                 child: Text(
                                   "SIGNUP",
                                   style: TextStyle(
-                                    color: Color.fromARGB(255, 255, 255, 255),
-                                    fontSize: 16,
+                                    color: Color.fromARGB(255, 0, 34, 255),
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

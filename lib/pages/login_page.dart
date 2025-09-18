@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mmcm_hits/components/my_textfield.dart';
 
-
 class LoginPage extends StatefulWidget {
   final Function()? onTap;
 
@@ -22,7 +21,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 248, 175, 168), 
+      backgroundColor: const Color.fromARGB(255, 248, 175, 168),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -33,14 +32,14 @@ class _LoginPageState extends State<LoginPage> {
                 const Text(
                   "HITS",
                   style: TextStyle(
-                    color: Colors.red,
+                    color: Color.fromARGB(255, 255, 17, 0),
                     fontSize: 100,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-            
+
                 const SizedBox(height: 20),
-            
+
                 // White card container
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 25),
@@ -64,48 +63,48 @@ class _LoginPageState extends State<LoginPage> {
                         color: Colors.red,
                         size: 60,
                       ),
-            
+
                       const SizedBox(height: 20),
-            
+
                       // Email textfield
                       MyTextfield(
                         controller: emailController,
                         hintText: 'Email',
                         obscureText: false,
                       ),
-            
+
                       const SizedBox(height: 15),
-            
+
                       // Password textfield
                       MyTextfield(
                         controller: passwordController,
                         hintText: 'Password',
                         obscureText: true,
                       ),
-            
+
                       const SizedBox(height: 15),
-            
+
                       // "No account?" text
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                           Text("No account? "),
+                          Text("No account? "),
                           const SizedBox(width: 4),
                           GestureDetector(
                             onTap: widget.onTap,
                             child: const Text(
                               "Create an Account",
                               style: TextStyle(
-                                color: Colors.red,
+                                color: Color.fromARGB(255, 255, 17, 0),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
                         ],
                       ),
-            
+
                       const SizedBox(height: 20),
-            
+
                       // Login button
                       GestureDetector(
                         onTap: logUserIn,
