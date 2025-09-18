@@ -1,23 +1,31 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  HomePage({super.key});
+
+  final user = FirebaseAuth.instance.currentUser!;
+
+  //sign user out method
+  void loginUserOut(){
+    FirebaseAuth.instance.signOut();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.greenAccent,
-        title: Text(
-          'Profile',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 48,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        centerTitle: false,
+      appBar: AppBar
+      (actions: [
+        IconButton(
+          onPressed: loginUserOut, 
+          icon: Icon(Icons.logout)
+          )
+        ],
       ),
+      body: Center(child: Text("LOGGED IN AS: " + user.email!,
+      style: TextStyle(fontSize: 20),
+      
+      ),),
     );
   }
 }

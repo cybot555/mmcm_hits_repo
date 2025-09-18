@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "151634418522",
+    "project_id": "auth-hitsapp",
+    "storage_bucket": "auth-hitsapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151634418522:android:2bb0ee93c8054efe727163",
+        "android_client_info": {
+          "package_name": "com.example.mmcm_hits"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArsAjb6LYRHCIFACXMIgfiNkbTFfYOIS4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151634418522:android:c9779676e2b6bb9f727163",
+        "android_client_info": {
+          "package_name": "hitsapp.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArsAjb6LYRHCIFACXMIgfiNkbTFfYOIS4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
