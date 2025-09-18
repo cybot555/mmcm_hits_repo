@@ -27,8 +27,8 @@ class DriverOrRider extends StatelessWidget {
             ),
             Expanded(
               child: RadioListTile<String>(
-                title: const Text("Rider"),
-                value: "Rider",
+                title: const Text("Hitcher"),
+                value: "Hitcher",
                 groupValue: selectedRole,
                 onChanged: onChanged,
               ),
