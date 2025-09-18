@@ -1,11 +1,12 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:mmcm_hits/components/my_button.dart';
 import 'package:mmcm_hits/components/my_textfield.dart';
 
 
 class LoginPage extends StatefulWidget {
   final Function()? onTap;
-
-  LoginPage({super.key, required this.onTap});
+  const LoginPage({super.key, required this.onTap});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -17,7 +18,57 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController();
 
   //log user in method
-  void logUserIn() {}
+void logUserIn() async {
+  // show loading circle
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    },
+  );
+
+    try {
+    await FirebaseAuth.instance.signInWithEmailAndPassword(
+      email: emailController.text.trim(),
+      password: passwordController.text.trim(),
+   );
+
+    if (!mounted) return; // ✅ prevent calling context if unmounted
+    Navigator.pop(context); // close loading
+  }   
+    on FirebaseAuthException catch (e) {
+      if (!mounted) return; // ✅ same here
+        Navigator.pop(context); // close loading first
+
+      showErrorMessage(e.code);
+  }
+}
+
+//show error message
+Future<void> showErrorMessage(String message) {
+  return showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: Colors.blue,
+        title: Center(
+          child: Text(
+            message,
+            style: const TextStyle(color: Colors.black),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+
+
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -107,27 +158,9 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 20),
             
                       // Login button
-                      GestureDetector(
+                      MyButton(
                         onTap: logUserIn,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 15),
-                          decoration: BoxDecoration(
-                            color: Colors.blue,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "LOGIN",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                        )
                     ],
                   ),
                 ),

@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
@@ -15,14 +16,64 @@ class SignupPage extends StatefulWidget {
 
 class _SignupPageState extends State<SignupPage> {
   // text editing controllers
-  final usernameController = TextEditingController();
+  final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmpasswordController = TextEditingController();
   String? selectedCollege;
   String? selectedProgram;
   String? selectedRole;
 
-  void signUpUser(){}
+  void signUpUser() async {
+  showDialog(
+    context: context,
+    barrierDismissible: false, // prevent dismissing by tapping outside
+    builder: (context) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    },
+  );
+
+  try {
+    if (passwordController.text != confirmpasswordController.text) {
+      if (!mounted) return;
+      Navigator.pop(context); // close loading first
+      showErrorMessage("Passwords don't match!");
+      return;
+    }
+
+    await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      email: emailController.text.trim(),
+      password: passwordController.text.trim(),
+    );
+
+    if (!mounted) return;
+    Navigator.pop(context); // close loading
+  } on FirebaseAuthException catch (e) {
+    if (!mounted) return;
+    Navigator.pop(context); // close loading
+    showErrorMessage(e.code);
+  }
+}
+
+Future<void> showErrorMessage(String message) {
+  return showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: Colors.blue,
+        title: Center(
+          child: Text(
+            message,
+            style: const TextStyle(color: Colors.black),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +132,7 @@ class _SignupPageState extends State<SignupPage> {
                 
                           // Email textfield
                           MyTextfield(
-                            controller: usernameController,
+                            controller: emailController,
                             hintText: 'Email',
                             obscureText: false,
                           ),
