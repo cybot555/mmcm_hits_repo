@@ -20,15 +20,15 @@ class DriverOrRider extends StatelessWidget {
             Expanded(
               child: RadioListTile<String>(
                 title: const Text("Driver"),
-                value: "Driver",
+                value: "Driver", // ✅ saves as Driver
                 groupValue: selectedRole,
                 onChanged: onChanged,
               ),
             ),
             Expanded(
               child: RadioListTile<String>(
-                title: const Text("Hitcher"),
-                value: "Hitcher",
+                title: const Text("Hitcher"), // 👀 shows Hitcher in UI
+                value: "Passenger", // ✅ saves as Passenger
                 groupValue: selectedRole,
                 onChanged: onChanged,
               ),

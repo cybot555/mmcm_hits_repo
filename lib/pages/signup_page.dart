@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
@@ -25,7 +26,7 @@ class _SignupPageState extends State<SignupPage> {
   void signUpUser() async {
     showDialog(
       context: context,
-      barrierDismissible: false, // prevent dismissing by tapping outside
+      barrierDismissible: false,
       builder: (context) {
         return const Center(child: CircularProgressIndicator());
       },
@@ -34,21 +35,40 @@ class _SignupPageState extends State<SignupPage> {
     try {
       if (passwordController.text != confirmpasswordController.text) {
         if (!mounted) return;
-        Navigator.pop(context); // close loading first
+        Navigator.pop(context);
         showErrorMessage("Passwords don't match!");
         return;
       }
 
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
+      // Create user in Firebase Auth
+      UserCredential userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: emailController.text.trim(),
+            password: passwordController.text.trim(),
+          );
+
+      // Get UID
+      final uid = userCredential.user!.uid;
+
+      // Save extra profile info in Firestore
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'uid': uid,
+        'email': emailController.text.trim(),
+        'college': selectedCollege ?? '',
+        'program': selectedProgram ?? '',
+        'role': selectedRole ?? 'Passenger',
+        'driverVerified': selectedRole == "Driver" ? false : null, // default
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (!mounted) return;
       Navigator.pop(context); // close loading
+
+      // maybe go to home page after sign up
+      // Navigator.pushReplacementNamed(context, "/home");
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // close loading
+      Navigator.pop(context);
       showErrorMessage(e.code);
     }
   }
