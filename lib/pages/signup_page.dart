@@ -120,8 +120,8 @@ class _SignupPageState extends State<SignupPage> {
 
                     // White card container
                     Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 15),
-                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.symmetric(horizontal: 25),
+                      padding: const EdgeInsets.all(25),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
