@@ -5,6 +5,7 @@ import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
 import 'package:mmcm_hits/components/driver_or_rider.dart';
 import 'package:mmcm_hits/components/driver_verification.dart';
+import 'package:mmcm_hits/pages/home.dart';
 
 class SignupPage extends StatefulWidget {
   final Function()? onTap;
@@ -65,7 +66,7 @@ class _SignupPageState extends State<SignupPage> {
       Navigator.pop(context); // close loading
 
       // maybe go to home page after sign up
-      // Navigator.pushReplacementNamed(context, "/home");
+      Navigator.pushReplacementNamed(context, "/home");
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
@@ -111,7 +112,7 @@ class _SignupPageState extends State<SignupPage> {
                     const Text(
                       "HITS",
                       style: TextStyle(
-                        color: Colors.red,
+                        color: Color.fromARGB(255, 255, 17, 0),
                         fontSize: 100,
                         fontWeight: FontWeight.bold,
                       ),
