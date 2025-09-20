@@ -86,7 +86,7 @@ class _DriverVerificationState extends State<DriverVerification> {
             ),
             const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildUploadBox("Driver's License", true),
                 _buildUploadBox("OR/CR", false),
