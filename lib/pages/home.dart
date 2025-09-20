@@ -15,7 +15,6 @@ class _HomePageState extends State<HomePage> {
   String? _role;
   Map<String, dynamic>? _userData;
 
-  // sign user out
   void loginUserOut() {
     FirebaseAuth.instance.signOut();
   }
@@ -39,100 +38,242 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// ---------------------------
+  /// AppBar Helpers
+  /// ---------------------------
+  String _getAppBarTitle() {
+    if (_selectedIndex == 0) return "Profile";
+    if (_selectedIndex == 1 && _role == "Passenger") return "Available Rides";
+    if (_selectedIndex == 1 && _role == "Driver") return "Ride Requests";
+    if (_selectedIndex == 2 && _role == "Driver") return "Create Ride";
+    return "";
+  }
+
+  String _getAppBarSubtitle() {
+    if (_selectedIndex == 0) return "";
+    if (_selectedIndex == 1 && _role == "Passenger") {
+      return "Find available rides going along your destination.";
+    }
+    if (_selectedIndex == 1 && _role == "Driver") {
+      return "See requests on posted shared ride!";
+    }
+    if (_selectedIndex == 2 && _role == "Driver") {
+      return "Post a ride for others to join.";
+    }
+    return "";
+  }
+
+  /// ---------------------------
+  /// Pages
+  /// ---------------------------
   List<Widget> _pages() {
     return [
-      // Profile Page
       _buildProfilePage(),
-
-      // Second Tab: depends on role
       if (_role == "Passenger")
         _buildPassengerRidesPage()
       else
         _buildDriverRequestsPage(),
-
-      // Third Tab: only for drivers
       if (_role == "Driver") _buildCreateRidePage(),
     ];
   }
 
+  /// Profile Page
   Widget _buildProfilePage() {
     if (_userData == null) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Container(
-      color: _role == "Driver" ? Colors.green[100] : Colors.blue[100],
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.account_circle, size: 100, color: Colors.black54),
-            Text(
-              "Name: ${_userData!['email']}",
-              style: const TextStyle(fontSize: 18),
+    final isDriver = _role == "Driver";
+
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar + Info
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const CircleAvatar(
+                radius: 45,
+                backgroundColor: Colors.grey,
+                child: Icon(Icons.person, size: 55, color: Colors.white),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _userData!['college'] ?? "",
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      _userData!['program'] ?? "",
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.emoji_transportation,
+                          size: 20,
+                          color: Colors.black54,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isDriver ? "Driver" : "Hitcher",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 28),
+
+          // Email row
+          Row(
+            children: [
+              const Icon(Icons.email, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                _userData!['email'] ?? "",
+                style: const TextStyle(fontSize: 18),
+              ),
+            ],
+          ),
+
+          const Spacer(),
+
+          // Logout button
+          Center(
+            child: ElevatedButton.icon(
+              onPressed: loginUserOut,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 30,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.logout, color: Colors.white),
+              label: const Text(
+                "Logout",
+                style: TextStyle(fontSize: 16, color: Colors.white),
+              ),
             ),
-            Text(
-              "College: ${_userData!['college']}",
-              style: const TextStyle(fontSize: 16),
-            ),
-            Text(
-              "Program: ${_userData!['program']}",
-              style: const TextStyle(fontSize: 16),
-            ),
-            Text("Role: $_role", style: const TextStyle(fontSize: 16)),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
+  /// Passenger Rides Page
   Widget _buildPassengerRidesPage() {
-    return Container(
-      color: Colors.blue[50],
-      child: const Center(
-        child: Text(
-          "Available Rides UI here 🚘",
-          style: TextStyle(fontSize: 20),
-        ),
-      ),
+    return const Center(
+      child: Text("Available Rides UI here 🚘", style: TextStyle(fontSize: 20)),
     );
   }
 
+  /// Driver Requests Page
   Widget _buildDriverRequestsPage() {
-    return Container(
-      color: Colors.green[50],
-      child: const Center(
-        child: Text("Ride Requests UI here 📝", style: TextStyle(fontSize: 20)),
-      ),
+    return const Center(
+      child: Text("Ride Requests UI here 📝", style: TextStyle(fontSize: 20)),
     );
   }
 
+  /// Create Ride Page (Driver only)
   Widget _buildCreateRidePage() {
-    return Container(
-      color: Colors.green[50],
-      child: const Center(
-        child: Text("Create Ride UI here ➕", style: TextStyle(fontSize: 20)),
-      ),
+    return const Center(
+      child: Text("Create Ride UI here ➕", style: TextStyle(fontSize: 20)),
     );
   }
 
+  /// ---------------------------
+  /// Build
+  /// ---------------------------
   @override
   Widget build(BuildContext context) {
-    if (_role == null) {
+    if (_role == null || _userData == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final isDriver = _role == "Driver";
+    final themeColor = isDriver
+        ? const Color.fromARGB(255, 195, 255, 198) // pastel green
+        : const Color.fromARGB(255, 192, 237, 255); // pastel blue
     final pages = _pages();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text("HITS ($_role)"),
-        actions: [
-          IconButton(onPressed: loginUserOut, icon: const Icon(Icons.logout)),
-        ],
+        backgroundColor: themeColor,
+        elevation: 0,
+        toolbarHeight: 85, // uniform AppBar height
+        title: Padding(
+          padding: const EdgeInsets.only(top: 10), // ✅ bring down a bit
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end, // ✅ align bottom
+            children: [
+              // Left side: Title + Subtitle
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _getAppBarTitle(),
+                    style: TextStyle(
+                      fontSize: _selectedIndex == 0 ? 36 : 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  if (_getAppBarSubtitle().isNotEmpty)
+                    Text(
+                      _getAppBarSubtitle(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black87,
+                      ),
+                    ),
+                ],
+              ),
+              // Right side: Role label
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6), // ✅ lower Hitcher
+                child: Text(
+                  "(${_role == "Passenger" ? "Hitcher" : _role})",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Color.fromARGB(255, 99, 98, 98),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
       body: pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: themeColor,
+        selectedItemColor: Colors.black,
+        unselectedItemColor: Colors.black54,
         currentIndex: _selectedIndex,
         onTap: (index) {
           setState(() {
