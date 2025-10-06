@@ -100,7 +100,7 @@ class _MyCollegeDropdownState extends State<MyCollegeDropdown> {
 
         // Program dropdown
         DropdownButtonFormField<String>(
-          value: selectedProgram,
+          initialValue: selectedProgram,
           decoration: const InputDecoration(
             labelText: "Select Program",
             border: OutlineInputBorder(),

@@ -5,226 +5,234 @@ import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
 import 'package:mmcm_hits/components/driver_or_rider.dart';
 import 'package:mmcm_hits/components/driver_verification.dart';
-import 'package:mmcm_hits/pages/home.dart';
 
 class SignupPage extends StatefulWidget {
   final Function()? onTap;
-  SignupPage({super.key, required this.onTap});
+  const SignupPage({super.key, required this.onTap});
 
   @override
   State<SignupPage> createState() => _SignupPageState();
 }
 
 class _SignupPageState extends State<SignupPage> {
-  // text editing controllers
+  // Firebase + controllers
+  final FirebaseFirestore db = FirebaseFirestore.instance;
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmpasswordController = TextEditingController();
+
   String? selectedCollege;
   String? selectedProgram;
   String? selectedRole;
+  bool driverDocsReady = false; // ✅ Track if both license & OR/CR uploaded
 
-  void signUpUser() async {
+  // -----------------------------
+  // SIGNUP LOGIC
+  // -----------------------------
+  Future<void> signUpUser() async {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        return const Center(child: CircularProgressIndicator());
-      },
+      builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
+      // Password check
       if (passwordController.text != confirmpasswordController.text) {
-        if (!mounted) return;
         Navigator.pop(context);
         showErrorMessage("Passwords don't match!");
         return;
       }
 
-      // Create user in Firebase Auth
-      UserCredential userCredential = await FirebaseAuth.instance
+      // ✅ Require uploads for Driver role
+      if (selectedRole == "Driver" && !driverDocsReady) {
+        Navigator.pop(context);
+        showErrorMessage(
+          "Please upload both License and OR/CR to register as a Driver!",
+        );
+        return;
+      }
+
+      // Create account
+      final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
             email: emailController.text.trim(),
             password: passwordController.text.trim(),
           );
 
-      // Get UID
       final uid = userCredential.user!.uid;
 
-      // Save extra profile info in Firestore
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      // Save user data to Firestore
+      await db.collection('users').doc(uid).set({
         'uid': uid,
         'email': emailController.text.trim(),
         'college': selectedCollege ?? '',
         'program': selectedProgram ?? '',
         'role': selectedRole ?? 'Passenger',
-        'driverVerified': selectedRole == "Driver" ? false : null, // default
+        'driverVerified': selectedRole == "Driver" ? false : null,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
       Navigator.pop(context); // close loading
 
-      // maybe go to home page after sign up
+      // Redirect after sign up
       Navigator.pushReplacementNamed(context, "/home");
     } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
       Navigator.pop(context);
       showErrorMessage(e.code);
     }
   }
 
-  Future<void> showErrorMessage(String message) {
+  // -----------------------------
+  // ERROR POPUP
+  // -----------------------------
+  Future<void> showErrorMessage(String message) async {
     return showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.blue,
-          title: Center(
-            child: Text(message, style: const TextStyle(color: Colors.black)),
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Center(
+          child: Text(
+            message,
+            style: const TextStyle(color: Colors.red, fontSize: 16),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
+  // -----------------------------
+  // UI
+  // -----------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 248, 175, 168),
       appBar: AppBar(
-        backgroundColor: Color.fromARGB(255, 248, 175, 168),
-        leading: BackButton(
-          //back button
-          onPressed: widget.onTap,
-          color: Colors.red,
-        ),
+        backgroundColor: const Color.fromARGB(255, 248, 175, 168),
+        leading: BackButton(onPressed: widget.onTap, color: Colors.red),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             children: [
-              SingleChildScrollView(
+              const Text(
+                "HITS",
+                style: TextStyle(
+                  color: Color.fromARGB(255, 255, 17, 0),
+                  fontSize: 100,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 25),
+                padding: const EdgeInsets.all(25),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // Title
-                    const Text(
-                      "HITS",
-                      style: TextStyle(
-                        color: Color.fromARGB(255, 255, 17, 0),
-                        fontSize: 100,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    const Icon(
+                      Icons.directions_car,
+                      color: Colors.red,
+                      size: 60,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // EMAIL
+                    MyTextfield(
+                      controller: emailController,
+                      hintText: 'Email',
+                      obscureText: false,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // PASSWORD
+                    MyTextfield(
+                      controller: passwordController,
+                      hintText: 'Password',
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // CONFIRM PASSWORD
+                    MyTextfield(
+                      controller: confirmpasswordController,
+                      hintText: 'Confirm Password',
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 10),
+
+                    // COLLEGE + PROGRAM
+                    MyCollegeDropdown(
+                      onChanged: (college, program) {
+                        setState(() {
+                          selectedCollege = college;
+                          selectedProgram = program;
+                        });
+                      },
+                      colleges: [],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // DRIVER OR HITCHER
+                    DriverOrRider(
+                      selectedRole: selectedRole,
+                      onChanged: (role) {
+                        setState(() {
+                          selectedRole = role;
+                        });
+                      },
                     ),
 
-                    // White card container
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 25),
-                      padding: const EdgeInsets.all(25),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                    // DRIVER VERIFICATION
+                    if (selectedRole == "Driver")
+                      DriverVerification(
+                        onVerificationChanged: (ready) {
+                          setState(() {
+                            driverDocsReady = ready;
+                          });
+                        },
                       ),
-                      child: Column(
-                        children: [
-                          // Logo
-                          const Icon(
-                            Icons.directions_car,
-                            color: Colors.red,
-                            size: 60,
+
+                    const SizedBox(height: 20),
+
+                    // SIGN UP BUTTON
+                    GestureDetector(
+                      onTap: (selectedRole == "Driver" && !driverDocsReady)
+                          ? null
+                          : signUpUser,
+                      child: Opacity(
+                        opacity: (selectedRole == "Driver" && !driverDocsReady)
+                            ? 0.5
+                            : 1.0,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          decoration: BoxDecoration(
+                            color: const Color.fromARGB(255, 0, 255, 8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-
-                          const SizedBox(height: 10),
-
-                          // Email textfield
-                          MyTextfield(
-                            controller: emailController,
-                            hintText: 'Email',
-                            obscureText: false,
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // Password textfield
-                          MyTextfield(
-                            controller: passwordController,
-                            hintText: 'Password',
-                            obscureText: true,
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          //confirm password txtfield
-                          MyTextfield(
-                            controller: confirmpasswordController,
-                            hintText: 'Confirm Password',
-                            obscureText: true,
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          //colleges and course dropdown
-                          MyCollegeDropdown(
-                            onChanged: (college, program) {
-                              setState(() {
-                                selectedCollege = college;
-                                selectedProgram = program;
-                              });
-                            },
-                            colleges: [],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // driver or rider radio button
-                          DriverOrRider(
-                            selectedRole: selectedRole,
-                            onChanged: (role) {
-                              setState(() {
-                                selectedRole = role;
-                              });
-                            },
-                          ),
-
-                          const SizedBox(height: 1),
-
-                          //driver verificatione
-                          if (selectedRole == "Driver")
-                            const DriverVerification(),
-
-                          const SizedBox(height: 10),
-
-                          //signup button
-                          GestureDetector(
-                            onTap: signUpUser,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 0, 255, 8),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  "SIGNUP",
-                                  style: TextStyle(
-                                    color: Color.fromARGB(255, 0, 68, 255),
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                          child: const Center(
+                            child: Text(
+                              "SIGNUP",
+                              style: TextStyle(
+                                color: Color.fromARGB(255, 0, 68, 255),
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ],

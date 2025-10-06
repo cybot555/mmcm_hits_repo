@@ -10,6 +10,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final db = FirebaseFirestore.instance;
   final user = FirebaseAuth.instance.currentUser!;
   int _selectedIndex = 0;
   String? _role;
@@ -26,10 +27,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadUserData() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
+    final doc = await db.collection('users').doc(user.uid).get();
     if (doc.exists) {
       setState(() {
         _userData = doc.data();

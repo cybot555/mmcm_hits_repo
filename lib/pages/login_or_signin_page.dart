@@ -10,7 +10,7 @@ class LoginOrSigninPage extends StatefulWidget {
 }
 
 class _LoginOrSigninPageState extends State<LoginOrSigninPage> {
-  //intially show login page
+  //initially show login page
   bool showLoginPage = true;
 
   //toggle between login and signin page
