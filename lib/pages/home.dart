@@ -49,7 +49,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _getAppBarSubtitle() {
-    if (_selectedIndex == 0) return "";
+    if (_selectedIndex == 0) {
+      return "Build your profile for MMCM students to see!";
+    }
     if (_selectedIndex == 1 && _role == "Passenger") {
       return "Find available rides going along your destination.";
     }
@@ -109,7 +111,7 @@ class _HomePageState extends State<HomePage> {
                   Text(
                     _getAppBarTitle(),
                     style: TextStyle(
-                      fontSize: _selectedIndex == 0 ? 36 : 26,
+                      fontSize: 26,
                       fontWeight: FontWeight.bold,
                       color: Colors.black,
                     ),
@@ -144,7 +146,7 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: themeColor,
         selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.black54,
+        unselectedItemColor: Colors.black38,
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed, // keeps even spacing
         onTap: (index) => setState(() => _selectedIndex = index),
@@ -165,7 +167,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            label: "Profile",
+            label: "PROFILE",
           ),
 
           // 🚗 Rides (Passenger) or Requests (Driver)
@@ -188,7 +190,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
-              label: "Requests",
+              label: "REQUESTS",
             ),
 
           // 🚌 Create Ride (only for drivers)
@@ -206,7 +208,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
-              label: "Create Ride",
+              label: "CREATE",
             ),
         ],
       ),

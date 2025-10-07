@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- 🧭 Location permission descriptions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We use your location to show your position on the map and nearby rides.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We use your location to enable continuous ride tracking and navigation.</string>
 </dict>
 </plist>

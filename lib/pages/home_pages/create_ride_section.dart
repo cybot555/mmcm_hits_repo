@@ -25,36 +25,35 @@ class _CreateRideSectionState extends State<CreateRideSection> {
   }
 
   Future<void> _getCurrentLocation() async {
-  print("🔍 Checking if location service is enabled..."); // ✅
+    print("🔍 Checking if location service is enabled..."); // ✅
 
-  bool serviceEnabled = await _location.serviceEnabled();
-  if (!serviceEnabled) {
-    print("⚙️ Requesting location service to be enabled..."); // ✅
-    serviceEnabled = await _location.requestService();
+    bool serviceEnabled = await _location.serviceEnabled();
     if (!serviceEnabled) {
-      print("❌ Location service not enabled."); // ✅
-      return;
+      print("⚙️ Requesting location service to be enabled..."); // ✅
+      serviceEnabled = await _location.requestService();
+      if (!serviceEnabled) {
+        print("❌ Location service not enabled."); // ✅
+        return;
+      }
     }
-  }
 
-  print("🔐 Checking for location permission..."); // ✅
-  PermissionStatus permissionGranted = await _location.hasPermission();
-  if (permissionGranted == PermissionStatus.denied) {
-    print("⚙️ Requesting location permission..."); // ✅
-    permissionGranted = await _location.requestPermission();
-    if (permissionGranted != PermissionStatus.granted) {
-      print("❌ Location permission not granted."); // ✅
-      return;
+    print("🔐 Checking for location permission..."); // ✅
+    PermissionStatus permissionGranted = await _location.hasPermission();
+    if (permissionGranted == PermissionStatus.denied) {
+      print("⚙️ Requesting location permission..."); // ✅
+      permissionGranted = await _location.requestPermission();
+      if (permissionGranted != PermissionStatus.granted) {
+        print("❌ Location permission not granted."); // ✅
+        return;
+      }
     }
+
+    print("📍 Getting current location..."); // ✅
+    final loc = await _location.getLocation();
+    print("✅ Location obtained: ${loc.latitude}, ${loc.longitude}"); // ✅
+
+    setState(() => _currentLocation = loc);
   }
-
-  print("📍 Getting current location..."); // ✅
-  final loc = await _location.getLocation();
-  print("✅ Location obtained: ${loc.latitude}, ${loc.longitude}"); // ✅
-
-  setState(() => _currentLocation = loc);
-}
-
 
   Future<void> _createRide() async {
     if (_currentLocation == null ||
@@ -78,9 +77,9 @@ class _CreateRideSectionState extends State<CreateRideSection> {
       'timestamp': DateTime.now(),
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ride created successfully!')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Ride created successfully!')));
 
     _destinationController.clear();
     _seatsController.clear();
@@ -92,17 +91,16 @@ class _CreateRideSectionState extends State<CreateRideSection> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final currentLatLng =
-        LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!);
+    final currentLatLng = LatLng(
+      _currentLocation!.latitude!,
+      _currentLocation!.longitude!,
+    );
 
     return Column(
       children: [
         Expanded(
           child: FlutterMap(
-            options: MapOptions(
-              initialCenter: currentLatLng,
-              initialZoom: 15,
-            ),
+            options: MapOptions(initialCenter: currentLatLng, initialZoom: 15),
             children: [
               TileLayer(
                 urlTemplate:
