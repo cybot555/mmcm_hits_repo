@@ -6,7 +6,6 @@ import 'home_pages/driver_requests_section.dart';
 import 'home_pages/passenger_rides_section.dart';
 import 'home_pages/profile_section.dart';
 
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -147,25 +146,66 @@ class _HomePageState extends State<HomePage> {
         selectedItemColor: Colors.black,
         unselectedItemColor: Colors.black54,
         currentIndex: _selectedIndex,
+        type: BottomNavigationBarType.fixed, // keeps even spacing
         onTap: (index) => setState(() => _selectedIndex = index),
         items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.person),
+          // 🧍 Profile tab
+          BottomNavigationBarItem(
+            icon: Padding(
+              padding: const EdgeInsets.only(
+                bottom: 0.5,
+              ), // slight visual balance
+              child: SizedBox(
+                height: 30, // icon container height
+                child: Image.asset(
+                  'assets/icons/profile.png',
+                  width: 26,
+                  height: 26,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
             label: "Profile",
           ),
+
+          // 🚗 Rides (Passenger) or Requests (Driver)
           if (_role == "Passenger")
             const BottomNavigationBarItem(
-              icon: Icon(Icons.directions_car),
+              icon: Icon(Icons.directions_car, size: 26),
               label: "Rides",
             )
           else
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.list),
+            BottomNavigationBarItem(
+              icon: Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: SizedBox(
+                  height: 30,
+                  child: Image.asset(
+                    'assets/icons/requests.png',
+                    width: 26,
+                    height: 26,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
               label: "Requests",
             ),
+
+          // 🚌 Create Ride (only for drivers)
           if (_role == "Driver")
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.add_circle),
+            BottomNavigationBarItem(
+              icon: Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: SizedBox(
+                  height: 30,
+                  child: Image.asset(
+                    'assets/icons/createride.png',
+                    width: 26,
+                    height: 26,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
               label: "Create Ride",
             ),
         ],
