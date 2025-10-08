@@ -75,7 +75,7 @@ class _HomePageState extends State<HomePage> {
         const PassengerRidesSection()
       else
         const DriverRequestsSection(),
-      if (_role == "Driver") const CreateRideSection(),
+      if (_role == "Driver") const MapPage(),
     ];
   }
 
