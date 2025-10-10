@@ -19,7 +19,8 @@ class _MapPageState extends State<MapPage> {
   LatLng? destination;
   List<LatLng> routePoints = [];
   final TextEditingController destinationController = TextEditingController();
-  final TextEditingController seatController = TextEditingController();
+
+  int? selectedSeats; // 👈 replaced seatController with selectedSeats variable
 
   @override
   void initState() {
@@ -27,7 +28,6 @@ class _MapPageState extends State<MapPage> {
     _determinePosition();
   }
 
-  // ✅ Get current position
   Future<void> _determinePosition() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -57,7 +57,6 @@ class _MapPageState extends State<MapPage> {
     mapController.move(currentLocation!, 15);
   }
 
-  // ✅ Search destination by name
   Future<void> _searchDestination(String query) async {
     if (query.isEmpty) return;
 
@@ -90,7 +89,9 @@ class _MapPageState extends State<MapPage> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error ${response.statusCode}: ${response.reasonPhrase}')),
+          SnackBar(
+              content: Text(
+                  'Error ${response.statusCode}: ${response.reasonPhrase}')),
         );
       }
     } catch (e) {
@@ -100,7 +101,6 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // ✅ Tap on map → set destination
   void _onTapMap(TapPosition tapPosition, LatLng point) async {
     setState(() {
       destination = point;
@@ -122,8 +122,8 @@ class _MapPageState extends State<MapPage> {
         String? name = data['display_name'];
 
         setState(() {
-          destinationController.text =
-              name ?? '(${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
+          destinationController.text = name ??
+              '(${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
         });
 
         _drawRoute();
@@ -139,7 +139,6 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // ✅ Draw route
   Future<void> _drawRoute() async {
     if (currentLocation == null || destination == null) return;
 
@@ -161,9 +160,8 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // ✅ Post ride (no fare)
   void _createRide() {
-    if (destination == null || seatController.text.isEmpty) {
+    if (destination == null || selectedSeats == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all ride details')),
       );
@@ -173,7 +171,7 @@ class _MapPageState extends State<MapPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Ride created to ${destinationController.text} • ${seatController.text} seats available',
+          'Ride created to ${destinationController.text} • $selectedSeats seats available',
         ),
         backgroundColor: Colors.green,
       ),
@@ -183,7 +181,7 @@ class _MapPageState extends State<MapPage> {
       routePoints.clear();
       destination = null;
       destinationController.clear();
-      seatController.clear();
+      selectedSeats = null; // ✅ reset
     });
   }
 
@@ -282,13 +280,25 @@ class _MapPageState extends State<MapPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                    controller: seatController,
-                    keyboardType: TextInputType.number,
+                  // 👇 replaced TextField with dropdown
+                  DropdownButtonFormField<int>(
+                    value: selectedSeats,
                     decoration: const InputDecoration(
                       labelText: "Seats Available",
                       border: OutlineInputBorder(),
                     ),
+                    items: List.generate(
+                      5,
+                      (index) => DropdownMenuItem(
+                        value: index + 1,
+                        child: Text('${index + 1}'),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedSeats = value;
+                      });
+                    },
                   ),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
