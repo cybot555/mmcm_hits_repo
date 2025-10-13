@@ -5,6 +5,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -15,17 +17,27 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final MapController mapController = MapController();
-  LatLng? currentLocation;
-  LatLng? destination;
+
+  LatLng? currentLocation; // driver current location
+  LatLng? destination; // chosen destination (lat,lng)
   List<LatLng> routePoints = [];
+
+  /// ✅ Single source of truth for destination *text*
   final TextEditingController destinationController = TextEditingController();
 
-  int? selectedSeats; // 👈 replaced seatController with selectedSeats variable
+  /// seats dropdown
+  int? selectedSeats;
 
   @override
   void initState() {
     super.initState();
     _determinePosition();
+  }
+
+  @override
+  void dispose() {
+    destinationController.dispose();
+    super.dispose();
   }
 
   Future<void> _determinePosition() async {
@@ -46,14 +58,12 @@ class _MapPageState extends State<MapPage> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return;
     }
-
     if (permission == LocationPermission.deniedForever) return;
 
-    Position position = await Geolocator.getCurrentPosition();
+    final position = await Geolocator.getCurrentPosition();
     setState(() {
       currentLocation = LatLng(position.latitude, position.longitude);
     });
-
     mapController.move(currentLocation!, 15);
   }
 
@@ -71,12 +81,13 @@ class _MapPageState extends State<MapPage> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data.isNotEmpty) {
-          double lat = double.parse(data[0]['lat']);
-          double lon = double.parse(data[0]['lon']);
+          final lat = double.parse(data[0]['lat']);
+          final lon = double.parse(data[0]['lon']);
 
           setState(() {
             destination = LatLng(lat, lon);
-            destinationController.text = data[0]['display_name'];
+            destinationController.text =
+                data[0]['display_name']; // ✅ keep in sync
             routePoints.clear();
           });
 
@@ -103,12 +114,12 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
+  /// When tapping the map, set both the LatLng *and* the text field.
   void _onTapMap(TapPosition tapPosition, LatLng point) async {
     setState(() {
       destination = point;
       routePoints.clear();
     });
-
     mapController.move(point, 15);
 
     final url =
@@ -121,14 +132,12 @@ class _MapPageState extends State<MapPage> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        String? name = data['display_name'];
-
+        final name = data['display_name'] as String?;
         setState(() {
           destinationController.text =
               name ??
               '(${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
         });
-
         _drawRoute();
       } else {
         setState(() {
@@ -159,33 +168,83 @@ class _MapPageState extends State<MapPage> {
         });
       }
     } catch (e) {
-      print("❌ Route error: $e");
+      // ignore for now
     }
   }
 
-  void _createRide() {
-    if (destination == null || selectedSeats == null) {
+  /// ✅ Fixed: use `destinationController.text` and also save GeoPoint for coords
+  Future<void> postRide() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('User not logged in')));
+      return;
+    }
+
+    final destName = destinationController.text.trim();
+    if (destName.isEmpty || destination == null || selectedSeats == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all ride details')),
+        const SnackBar(content: Text('Please pick a destination and seats')),
       );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Ride created to ${destinationController.text} • $selectedSeats seats available',
-        ),
-        backgroundColor: Colors.green,
-      ),
-    );
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
-    setState(() {
-      routePoints.clear();
-      destination = null;
-      destinationController.clear();
-      selectedSeats = null; // ✅ reset
-    });
+      if (!userDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Driver profile not found')),
+        );
+        return;
+      }
+
+      final driverData = userDoc.data()!;
+      final driverName = driverData['email'] ?? 'Unknown Driver';
+      final plateNumber = driverData['plateNumber'] ?? 'Unknown Plate';
+
+      final rideData = {
+        'driverId': user.uid,
+        'driverName': driverName,
+        'plateNumber': plateNumber,
+        'origin': 'MMCM Campus', // TODO: set real pickup if you add a picker
+        'destinationName': destName, // ✅ name
+        'destinationLocation': GeoPoint(
+          destination!.latitude,
+          destination!.longitude,
+        ), // ✅ coords
+        if (currentLocation != null)
+          'pickupLocation': GeoPoint(
+            currentLocation!.latitude,
+            currentLocation!.longitude,
+          ),
+        'seatsAvailable': selectedSeats,
+        'status': 'open',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance.collection('rides').add(rideData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ride posted successfully!')),
+      );
+
+      // Reset UI
+      setState(() {
+        routePoints.clear();
+        destination = null;
+        destinationController.clear();
+        selectedSeats = null;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error posting ride: $e')));
+    }
   }
 
   @override
@@ -196,7 +255,7 @@ class _MapPageState extends State<MapPage> {
           FlutterMap(
             mapController: mapController,
             options: MapOptions(
-              initialCenter: LatLng(14.5995, 120.9842),
+              initialCenter: const LatLng(14.5995, 120.9842),
               initialZoom: 12,
               onTap: _onTapMap,
             ),
@@ -246,7 +305,7 @@ class _MapPageState extends State<MapPage> {
             child: Card(
               elevation: 4,
               child: TextField(
-                controller: destinationController,
+                controller: destinationController, // ✅ same controller
                 decoration: InputDecoration(
                   hintText: "Enter destination",
                   suffixIcon: IconButton(
@@ -257,6 +316,7 @@ class _MapPageState extends State<MapPage> {
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.all(12),
                 ),
+                onSubmitted: _searchDestination,
               ),
             ),
           ),
@@ -282,7 +342,6 @@ class _MapPageState extends State<MapPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 👇 replaced TextField with dropdown
                   DropdownButtonFormField<int>(
                     value: selectedSeats,
                     decoration: const InputDecoration(
@@ -291,16 +350,12 @@ class _MapPageState extends State<MapPage> {
                     ),
                     items: List.generate(
                       3,
-                      (index) => DropdownMenuItem(
-                        value: index + 1,
-                        child: Text('${index + 1}'),
+                      (i) => DropdownMenuItem(
+                        value: i + 1,
+                        child: Text('${i + 1}'),
                       ),
                     ),
-                    onChanged: (value) {
-                      setState(() {
-                        selectedSeats = value;
-                      });
-                    },
+                    onChanged: (v) => setState(() => selectedSeats = v),
                   ),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
@@ -310,8 +365,7 @@ class _MapPageState extends State<MapPage> {
                     ),
                     icon: const Icon(Icons.check),
                     label: const Text("Post Ride"),
-
-                    onPressed: _createRide,
+                    onPressed: postRide,
                   ),
                 ],
               ),

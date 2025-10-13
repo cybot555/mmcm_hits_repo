@@ -42,7 +42,7 @@ class _HomePageState extends State<HomePage> {
 
   String _getAppBarTitle() {
     if (_selectedIndex == 0) return "Profile";
-    if (_selectedIndex == 1 && _role == "Passenger") return "Available Rides";
+    if (_selectedIndex == 1 && _role == "Hitcher") return "Available Rides";
     if (_selectedIndex == 1 && _role == "Driver") return "Ride Requests";
     if (_selectedIndex == 2 && _role == "Driver") return "Create Ride";
     return "";
@@ -52,7 +52,7 @@ class _HomePageState extends State<HomePage> {
     if (_selectedIndex == 0) {
       return "Build your profile for MMCM students to see!";
     }
-    if (_selectedIndex == 1 && _role == "Passenger") {
+    if (_selectedIndex == 1 && _role == "Hitcher") {
       return "Find available rides going along your destination.";
     }
     if (_selectedIndex == 1 && _role == "Driver") {
@@ -71,7 +71,7 @@ class _HomePageState extends State<HomePage> {
         onLogout: loginUserOut,
         role: _role ?? "",
       ),
-      if (_role == "Passenger")
+      if (_role == "Hitcher")
         const PassengerRidesSection()
       else
         const DriverRequestsSection(),
@@ -171,7 +171,7 @@ class _HomePageState extends State<HomePage> {
           ),
 
           // 🚗 Rides (Passenger) or Requests (Driver)
-          if (_role == "Passenger")
+          if (_role == "Hitcher")
             const BottomNavigationBarItem(
               icon: Icon(Icons.directions_car, size: 26),
               label: "Rides",
