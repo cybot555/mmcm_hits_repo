@@ -68,7 +68,7 @@ class _SignupPageState extends State<SignupPage> {
         'email': emailController.text.trim(),
         'college': selectedCollege ?? '',
         'program': selectedProgram ?? '',
-        'role': selectedRole ?? 'Passenger',
+        'role': selectedRole ?? 'Hitcher',
         'driverVerified': selectedRole == "Driver" ? false : null,
         'createdAt': FieldValue.serverTimestamp(),
       });

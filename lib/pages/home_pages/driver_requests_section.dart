@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:geolocator/geolocator.dart';
+import 'driver_live_map.dart'; // 👈 add this import
 
 class DriverRequestsSection extends StatefulWidget {
   const DriverRequestsSection({super.key});
@@ -12,7 +16,10 @@ class DriverRequestsSection extends StatefulWidget {
 class _DriverRequestsSectionState extends State<DriverRequestsSection> {
   final user = FirebaseAuth.instance.currentUser!;
   final db = FirebaseFirestore.instance;
+  final dbRT = FirebaseDatabase.instance.ref();
+  StreamSubscription<Position>? _positionSubscription; // 🛰️ live GPS stream
 
+  /// ✅ Accept request
   Future<void> acceptRequest(String rideId, String requestId) async {
     final rideRef = db.collection('rides').doc(rideId);
     final requestRef = rideRef.collection('requests').doc(requestId);
@@ -45,6 +52,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
         });
   }
 
+  /// ❌ Reject request
   Future<void> rejectRequest(String rideId, String requestId) async {
     await db
         .collection('rides')
@@ -55,6 +63,100 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
+  }
+
+  // 🛰️ Request permission helper
+  Future<bool> _checkAndRequestLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enable location services.')),
+      );
+      await Geolocator.openLocationSettings();
+      return false;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission denied.')),
+        );
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location permissions are permanently denied.'),
+        ),
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /// 🚗 Start the ride — updates Firestore + streams GPS to RTDB
+  Future<void> startRide(String rideId) async {
+    if (!await _checkAndRequestLocation()) return;
+
+    try {
+      await db.collection('rides').doc(rideId).update({'status': 'ongoing'});
+
+      // 🛰️ Start streaming driver's live location to Realtime Database
+      _positionSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 15, // push new data every 15 meters moved
+            ),
+          ).listen((pos) {
+            dbRT.child('activeRides/$rideId/driverLocation').set({
+              'lat': pos.latitude,
+              'lng': pos.longitude,
+              'timestamp': ServerValue.timestamp,
+            });
+          });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚗 Ride started — live tracking active!'),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
+    }
+  }
+
+  /// 🏁 End the ride — stop GPS + clean up RTDB
+  Future<void> endRide(String rideId) async {
+    try {
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
+
+      await db.collection('rides').doc(rideId).update({'status': 'completed'});
+
+      await dbRT.child('activeRides/$rideId').remove();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Ride completed — tracking stopped.')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
+    }
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel(); // ✅ cleanup on exit
+    super.dispose();
   }
 
   @override
@@ -79,7 +181,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
           }
 
           final rides = rideSnap.data!.docs;
-
           if (rides.isEmpty) {
             return const Center(child: Text("No rides posted yet."));
           }
@@ -90,6 +191,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
               final rideId = ride.id;
               final destination = rideData['destinationName'] ?? 'Unknown';
               final seats = rideData['seatsAvailable'] ?? 0;
+              final rideStatus = rideData['status'] ?? 'open';
 
               return Card(
                 margin: const EdgeInsets.all(10),
@@ -104,11 +206,9 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                   ),
                   subtitle: Text("Seats available: $seats"),
                   children: [
+                    // ✅ Requests List
                     StreamBuilder<QuerySnapshot>(
-                      stream: ride.reference
-                          .collection('requests')
-                          //.orderBy('timestamp', descending: true)
-                          .snapshots(),
+                      stream: ride.reference.collection('requests').snapshots(),
                       builder: (context, reqSnap) {
                         if (reqSnap.hasError) {
                           return Padding(
@@ -133,7 +233,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                           );
                         }
 
-                        // ✅ Added: Expanded + Safe ListView for smoother rebuilds
                         return Column(
                           children: requests.map((req) {
                             final data = req.data() as Map<String, dynamic>;
@@ -189,6 +288,73 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                           }).toList(),
                         );
                       },
+                    ),
+
+                    const Divider(),
+
+                    // 🚦 Ride control buttons
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Column(
+                        children: [
+                          if (rideStatus == 'open' || rideStatus == 'full')
+                            ElevatedButton.icon(
+                              onPressed: () async {
+                                await startRide(rideId); // Start ride normally
+
+                                // 🗺️ Then open Driver Live Map
+                                final destGeo =
+                                    rideData['destinationLocation']
+                                        as GeoPoint?;
+                                if (destGeo != null && context.mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DriverLiveMap(
+                                        rideId: rideId,
+                                        destination: destGeo,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        '⚠️ No destination found for this ride.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.play_arrow),
+                              label: const Text("Start Ride"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blueAccent,
+                              ),
+                            ),
+                          if (rideStatus == 'ongoing')
+                            ElevatedButton.icon(
+                              onPressed: () => endRide(rideId),
+                              icon: const Icon(Icons.flag),
+                              label: const Text("End Ride"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                              ),
+                            ),
+                          if (rideStatus == 'completed')
+                            const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                "✅ Ride Completed",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black54,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
