@@ -90,8 +90,10 @@ class _MapPageState extends State<MapPage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  'Error ${response.statusCode}: ${response.reasonPhrase}')),
+            content: Text(
+              'Error ${response.statusCode}: ${response.reasonPhrase}',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -122,7 +124,8 @@ class _MapPageState extends State<MapPage> {
         String? name = data['display_name'];
 
         setState(() {
-          destinationController.text = name ??
+          destinationController.text =
+              name ??
               '(${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
         });
 
@@ -287,7 +290,7 @@ class _MapPageState extends State<MapPage> {
                       border: OutlineInputBorder(),
                     ),
                     items: List.generate(
-                      5,
+                      3,
                       (index) => DropdownMenuItem(
                         value: index + 1,
                         child: Text('${index + 1}'),
@@ -303,10 +306,11 @@ class _MapPageState extends State<MapPage> {
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size.fromHeight(45),
-                      backgroundColor: Colors.green,
+                      backgroundColor: const Color.fromARGB(255, 88, 240, 12),
                     ),
                     icon: const Icon(Icons.check),
-                    label: const Text("Create Ride"),
+                    label: const Text("Post Ride"),
+
                     onPressed: _createRide,
                   ),
                 ],
