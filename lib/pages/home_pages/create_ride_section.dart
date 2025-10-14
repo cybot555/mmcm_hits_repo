@@ -122,13 +122,14 @@ class _MapPageState extends State<MapPage> {
     });
     mapController.move(point, 15);
 
+    final headers = {'User-Agent': 'MMCMHitsApp/1.0 (hits@mmcm.edu.ph)'};
     final url =
         'https://nominatim.openstreetmap.org/reverse?lat=${point.latitude}&lon=${point.longitude}&format=json';
+
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'User-Agent': 'mmcm_hits_app/1.0 (your_email@example.com)'},
-      );
+      final response = await http
+          .get(Uri.parse(url), headers: headers)
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -145,9 +146,31 @@ class _MapPageState extends State<MapPage> {
         });
       }
     } catch (e) {
-      setState(() {
-        destinationController.text = 'Unknown location';
-      });
+      // 🧠 retry once if network hiccup
+      await Future.delayed(const Duration(seconds: 1));
+      try {
+        final retry = await http
+            .get(Uri.parse(url), headers: headers)
+            .timeout(const Duration(seconds: 6));
+        if (retry.statusCode == 200) {
+          final data = json.decode(retry.body);
+          final name = data['display_name'] as String?;
+          setState(() {
+            destinationController.text =
+                name ??
+                '(${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
+          });
+          _drawRoute();
+        } else {
+          setState(() {
+            destinationController.text = 'Unknown location';
+          });
+        }
+      } catch (_) {
+        setState(() {
+          destinationController.text = 'Unknown location';
+        });
+      }
     }
   }
 

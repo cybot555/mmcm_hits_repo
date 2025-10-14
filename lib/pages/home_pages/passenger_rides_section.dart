@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'hitcher_live_map.dart'; // ✅ Import the live tracking map
 
 class PassengerRidesSection extends StatefulWidget {
   const PassengerRidesSection({super.key});
@@ -57,15 +58,23 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
     }
   }
 
+  /// 🗺️ Opens the live tracking map
+  void openLiveTracking(String rideId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => HitcherLiveMap(rideId: rideId)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF3F6FB),
       body: StreamBuilder<QuerySnapshot>(
         stream: db
             .collection('rides')
-            // show all open or ongoing rides so hitchers still see accepted ones
             .where('status', whereIn: ['open', 'ongoing', 'completed'])
-            //.orderBy('createdAt', descending: true)
+            .orderBy('createdAt', descending: true) // 👈 NEW: newest on top
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -87,6 +96,7 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.only(top: 10, bottom: 20),
             itemCount: rides.length,
             itemBuilder: (context, index) {
               final ride = rides[index];
@@ -97,10 +107,9 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
               final driver = data['driverName'] ?? 'Unknown Driver';
               final plate = data['plateNumber'] ?? 'N/A';
               final seats = data['seatsAvailable'] ?? 0;
-              final departure = data['departureTime']?.toDate();
               final rideStatus = data['status'] ?? 'open';
 
-              // 🔹 StreamBuilder for this user's request + ride updates
+              // 🔹 Listen to THIS user's request status for each ride
               return StreamBuilder<QuerySnapshot>(
                 stream: db
                     .collection('rides')
@@ -116,23 +125,27 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
                     requestStatus = reqData['status'];
                   }
 
+                  // 🎨 Button logic
                   Color buttonColor;
                   String buttonText;
                   bool enabled;
+                  bool showTrackButton = false;
 
-                  // 🧠 Combine request + ride status for richer logic
                   if (requestStatus == 'accepted' && rideStatus == 'ongoing') {
                     buttonColor = Colors.blueAccent;
                     buttonText = '🚗 Ride In Progress';
                     enabled = false;
+                    showTrackButton = true;
+                  } else if (requestStatus == 'accepted' &&
+                      rideStatus == 'open') {
+                    buttonColor = Colors.green;
+                    buttonText = 'Accepted ✅';
+                    enabled = false;
+                    showTrackButton = true;
                   } else if (requestStatus == 'accepted' &&
                       rideStatus == 'completed') {
                     buttonColor = Colors.grey;
                     buttonText = '✅ Ride Completed';
-                    enabled = false;
-                  } else if (requestStatus == 'accepted') {
-                    buttonColor = Colors.green;
-                    buttonText = 'Accepted ✅';
                     enabled = false;
                   } else if (requestStatus == 'rejected') {
                     buttonColor = Colors.red;
@@ -143,74 +156,97 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
                     buttonText = 'Requested 🕒';
                     enabled = false;
                   } else {
-                    buttonColor = const Color.fromARGB(255, 88, 240, 12);
+                    buttonColor = const Color(0xFF59E70C);
                     buttonText = 'Request Ride';
                     enabled = true;
                   }
 
+                  // 🧩 Card layout
                   return Card(
                     margin: const EdgeInsets.symmetric(
-                      horizontal: 12,
+                      horizontal: 14,
                       vertical: 8,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     elevation: 3,
                     child: Padding(
-                      padding: const EdgeInsets.all(12.0),
+                      padding: const EdgeInsets.all(14.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Header
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Icon(
-                                Icons.directions_car,
+                                Icons.directions_car_rounded,
                                 color: Colors.blueAccent,
+                                size: 24,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   destination,
                                   style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
                                   ),
-                                  softWrap: true,
-                                  maxLines: 3,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Text("Driver: $driver"),
-                          Text("Plate: $plate"),
-                          Text("Seats Available: $seats"),
-                          if (departure != null)
-                            Text(
-                              "Departure: ${departure.hour}:${departure.minute.toString().padLeft(2, '0')}",
-                              style: const TextStyle(
-                                color: Colors.black54,
-                                fontSize: 13,
-                              ),
-                            ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: buttonColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Driver: $driver",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          Text(
+                            "Plate: $plate",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          Text(
+                            "Seats Available: $seats",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 🧭 Buttons (improved layout)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: buttonColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  minimumSize: const Size.fromHeight(45),
                                 ),
+                                onPressed: enabled
+                                    ? () => sendRideRequest(ride.id)
+                                    : null,
+                                icon: const Icon(Icons.send),
+                                label: Text(buttonText),
                               ),
-                              onPressed: enabled
-                                  ? () => sendRideRequest(ride.id)
-                                  : null,
-                              icon: const Icon(Icons.send),
-                              label: Text(buttonText),
-                            ),
+                              if (showTrackButton) ...[
+                                const SizedBox(height: 8),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blueAccent,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    minimumSize: const Size.fromHeight(42),
+                                  ),
+                                  onPressed: () => openLiveTracking(ride.id),
+                                  icon: const Icon(Icons.map),
+                                  label: const Text("Track Ride"),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),

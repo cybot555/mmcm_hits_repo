@@ -166,6 +166,10 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
         stream: db
             .collection('rides')
             .where('driverId', isEqualTo: user.uid)
+            .orderBy(
+              'createdAt',
+              descending: true,
+            ) // 👈 NEW: sort by latest first
             .snapshots(),
         builder: (context, rideSnap) {
           if (rideSnap.hasError) {
@@ -289,6 +293,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                     const Divider(),
 
                     // 🚦 Ride control buttons
+                    // 🚦 Ride control buttons
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
                       child: Column(
@@ -298,7 +303,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                               onPressed: () async {
                                 await startRide(rideId); // Start ride normally
 
-                                // 🗺️ Then open Driver Live Map
+                                // 🗺️ Then open Driver Live Map automatically
                                 final destGeo =
                                     rideData['destinationLocation']
                                         as GeoPoint?;
@@ -326,17 +331,50 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                               label: const Text("Start Ride"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blueAccent,
+                                foregroundColor: Colors.white,
                               ),
                             ),
-                          if (rideStatus == 'ongoing')
+
+                          // 👇 NEW for ongoing rides
+                          if (rideStatus == 'ongoing') ...[
                             ElevatedButton.icon(
                               onPressed: () => endRide(rideId),
                               icon: const Icon(Icons.flag),
                               label: const Text("End Ride"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
                               ),
                             ),
+                            const SizedBox(height: 6),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                final destGeo =
+                                    rideData['destinationLocation']
+                                        as GeoPoint?;
+                                if (destGeo != null) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DriverLiveMap(
+                                        rideId: rideId,
+                                        destination: destGeo,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.map_outlined),
+                              label: const Text("View Live Map"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blueAccent,
+                                side: const BorderSide(
+                                  color: Colors.blueAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+
                           if (rideStatus == 'completed')
                             const Padding(
                               padding: EdgeInsets.all(8.0),
