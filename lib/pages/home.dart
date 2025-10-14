@@ -172,9 +172,14 @@ class _HomePageState extends State<HomePage> {
 
           // 🚗 Rides (Passenger) or Requests (Driver)
           if (_role == "Hitcher")
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.directions_car, size: 26),
-              label: "Rides",
+            BottomNavigationBarItem(
+              icon: Image.asset(
+                'assets/icons/rides.png',
+                width: 26,
+                height: 26,
+                fit: BoxFit.contain,
+              ),
+              label: "RIDES",
             )
           else
             BottomNavigationBarItem(

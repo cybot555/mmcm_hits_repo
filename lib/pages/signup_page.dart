@@ -141,12 +141,13 @@ class _SignupPageState extends State<SignupPage> {
                 ),
                 child: Column(
                   children: [
-                    const Icon(
-                      Icons.directions_car,
-                      color: Colors.red,
-                      size: 60,
+                    Image.asset(
+                      'assets/icons/map.png',
+                      width: 65,
+                      height: 65,
+                      fit: BoxFit.fitHeight,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 25),
 
                     // EMAIL
                     MyTextfield(

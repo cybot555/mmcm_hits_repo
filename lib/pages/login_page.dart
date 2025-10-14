@@ -17,57 +17,46 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController();
 
   //log user in method
-void logUserIn() async {
-  // show loading circle
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    },
-  );
+  void logUserIn() async {
+    // show loading circle
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const Center(child: CircularProgressIndicator());
+      },
+    );
 
     try {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: emailController.text.trim(),
-      password: passwordController.text.trim(),
-   );
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
+      );
 
-    if (!mounted) return; // ✅ prevent calling context if unmounted
-    Navigator.pop(context); // close loading
-  }   
-    on FirebaseAuthException catch (e) {
+      if (!mounted) return; // ✅ prevent calling context if unmounted
+      Navigator.pop(context); // close loading
+    } on FirebaseAuthException catch (e) {
       if (!mounted) return; // ✅ same here
-        Navigator.pop(context); // close loading first
+      Navigator.pop(context); // close loading first
 
       showErrorMessage(e.code);
+    }
   }
-}
 
-//show error message
-Future<void> showErrorMessage(String message) {
-  return showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        backgroundColor: Colors.blue,
-        title: Center(
-          child: Text(
-            message,
-            style: const TextStyle(color: Colors.black),
+  //show error message
+  Future<void> showErrorMessage(String message) {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.blue,
+          title: Center(
+            child: Text(message, style: const TextStyle(color: Colors.black)),
           ),
-        ),
-      );
-    },
-  );
-}
-
-
-
-
-
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,10 +98,11 @@ Future<void> showErrorMessage(String message) {
                   child: Column(
                     children: [
                       // Logo
-                      const Icon(
-                        Icons.directions_car,
-                        color: Colors.red,
-                        size: 60,
+                      Image.asset(
+                        'assets/icons/map.png',
+                        width: 65,
+                        height: 65,
+                        fit: BoxFit.fitHeight,
                       ),
 
                       const SizedBox(height: 20),
@@ -157,9 +147,7 @@ Future<void> showErrorMessage(String message) {
                       const SizedBox(height: 20),
 
                       // Login button
-                      MyButton(
-                        onTap: logUserIn,
-                        )
+                      MyButton(onTap: logUserIn),
                     ],
                   ),
                 ),
