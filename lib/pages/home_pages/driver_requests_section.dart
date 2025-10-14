@@ -162,10 +162,10 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      /*appBar: AppBar(
         title: const Text("Incoming Ride Requests"),
         backgroundColor: Colors.green,
-      ),
+      ),*/
       body: StreamBuilder<QuerySnapshot>(
         stream: db
             .collection('rides')

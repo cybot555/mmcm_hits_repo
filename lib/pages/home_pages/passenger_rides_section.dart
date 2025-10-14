@@ -60,10 +60,6 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Available Rides"),
-        backgroundColor: Colors.blueAccent,
-      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: db
             .collection('rides')
