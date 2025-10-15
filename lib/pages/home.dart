@@ -65,19 +65,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Widget> _pages() {
-    return [
-      ProfileSection(
-        userData: _userData,
-        onLogout: loginUserOut,
-        role: _role ?? "",
-      ),
-      if (_role == "Hitcher")
-        const PassengerRidesSection()
-      else
-        const DriverRequestsSection(),
-      if (_role == "Driver") const MapPage(),
-    ];
-  }
+  return [
+    ProfileSection(
+      userData: _userData,
+      onLogout: loginUserOut,
+      role: _role ?? "",
+      uid: user.uid, // runtime UID works now
+    ),
+    if (_role == "Hitcher")
+      const PassengerRidesSection()
+    else
+      const DriverRequestsSection(),
+    if (_role == "Driver") const MapPage(),
+  ];
+}
 
   @override
   Widget build(BuildContext context) {
