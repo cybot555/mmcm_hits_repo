@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:geolocator/geolocator.dart';
-import 'driver_live_map.dart'; // 👈 add this import
+import 'driver_live_map.dart';
 
 class DriverRequestsSection extends StatefulWidget {
   const DriverRequestsSection({super.key});
@@ -17,39 +17,34 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
   final user = FirebaseAuth.instance.currentUser!;
   final db = FirebaseFirestore.instance;
   final dbRT = FirebaseDatabase.instance.ref();
-  StreamSubscription<Position>? _positionSubscription; // 🛰️ live GPS stream
+  StreamSubscription<Position>? _positionSubscription;
 
   /// ✅ Accept request
   Future<void> acceptRequest(String rideId, String requestId) async {
     final rideRef = db.collection('rides').doc(rideId);
     final requestRef = rideRef.collection('requests').doc(requestId);
 
-    await db
-        .runTransaction((txn) async {
-          final rideSnap = await txn.get(rideRef);
-          final rideData = rideSnap.data() as Map<String, dynamic>;
-          final seatsLeft = rideData['seatsAvailable'] ?? 0;
+    await db.runTransaction((txn) async {
+      final rideSnap = await txn.get(rideRef);
+      final rideData = rideSnap.data() as Map<String, dynamic>;
+      final seatsLeft = rideData['seatsAvailable'] ?? 0;
 
-          if (seatsLeft > 0) {
-            txn.update(requestRef, {'status': 'accepted'});
-            txn.update(rideRef, {
-              'seatsAvailable': seatsLeft - 1,
-              if (seatsLeft - 1 == 0) 'status': 'full',
-            });
-          } else {
-            throw Exception('No seats left');
-          }
-        })
-        .then((_) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('✅ Request accepted')));
-        })
-        .catchError((e) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error accepting: $e')));
+      if (seatsLeft > 0) {
+        txn.update(requestRef, {'status': 'accepted'});
+        txn.update(rideRef, {
+          'seatsAvailable': seatsLeft - 1,
+          if (seatsLeft - 1 == 0) 'status': 'full',
         });
+      } else {
+        throw Exception('No seats left');
+      }
+    }).then((_) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('✅ Request accepted')));
+    }).catchError((e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error accepting: $e')));
+    });
   }
 
   /// ❌ Reject request
@@ -60,12 +55,11 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
         .collection('requests')
         .doc(requestId)
         .update({'status': 'rejected'});
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
   }
 
-  // 🛰️ Request permission helper
+  /// 🛰️ Check & request location permission
   Future<bool> _checkAndRequestLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -90,8 +84,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     if (permission == LocationPermission.deniedForever) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Location permissions are permanently denied.'),
-        ),
+            content: Text('Location permissions are permanently denied.')),
       );
       return false;
     }
@@ -99,116 +92,111 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     return true;
   }
 
-  /// 🚗 Start the ride — updates Firestore + streams GPS to RTDB
+  /// 🚗 Start ride and begin live tracking
   Future<void> startRide(String rideId) async {
     if (!await _checkAndRequestLocation()) return;
 
     try {
       await db.collection('rides').doc(rideId).update({'status': 'ongoing'});
 
-      // 🛰️ Start streaming driver's live location to Realtime Database
-      _positionSubscription =
-          Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              distanceFilter: 15, // push new data every 15 meters moved
-            ),
-          ).listen((pos) {
-            dbRT.child('activeRides/$rideId/driverLocation').set({
-              'lat': pos.latitude,
-              'lng': pos.longitude,
-              'timestamp': ServerValue.timestamp,
-            });
-          });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚗 Ride started — live tracking active!'),
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 15,
         ),
-      );
+      ).listen((pos) {
+        dbRT.child('activeRides/$rideId/driverLocation').set({
+          'lat': pos.latitude,
+          'lng': pos.longitude,
+          'timestamp': ServerValue.timestamp,
+        });
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('🚗 Ride started — live tracking active!')));
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
     }
   }
 
-  /// 🏁 End the ride — stop GPS + clean up RTDB
+  /// 🏁 End ride & stop tracking
   Future<void> endRide(String rideId) async {
     try {
       await _positionSubscription?.cancel();
       _positionSubscription = null;
 
       await db.collection('rides').doc(rideId).update({'status': 'completed'});
-
       await dbRT.child('activeRides/$rideId').remove();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Ride completed — tracking stopped.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Ride completed — tracking stopped.')));
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
     }
   }
 
   @override
   void dispose() {
-    _positionSubscription?.cancel(); // ✅ cleanup on exit
+    _positionSubscription?.cancel();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
-        stream: db
-            .collection('rides')
-            .where('driverId', isEqualTo: user.uid)
-            .orderBy(
-              'createdAt',
-              descending: true,
-            ) // 👈 NEW: sort by latest first
-            .snapshots(),
-        builder: (context, rideSnap) {
-          if (rideSnap.hasError) {
-            return Center(child: Text('Error: ${rideSnap.error}'));
-          }
+  /// 📋 Builds ride list (shared by Active & History tabs)
+  Widget buildRideList(BuildContext context, {required bool isHistory}) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: db
+          .collection('rides')
+          .where('driverId', isEqualTo: user.uid)
+          .where(
+            'status',
+            whereIn: isHistory
+                ? ['completed']
+                : ['open', 'full', 'ongoing'],
+          )
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, rideSnap) {
+        if (rideSnap.hasError) {
+          return Center(child: Text('Error: ${rideSnap.error}'));
+        }
 
-          if (!rideSnap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+        if (!rideSnap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-          final rides = rideSnap.data!.docs;
-          if (rides.isEmpty) {
-            return const Center(child: Text("No rides posted yet."));
-          }
+        final rides = rideSnap.data!.docs;
+        if (rides.isEmpty) {
+          return Center(
+              child: Text(isHistory
+                  ? "No completed rides yet."
+                  : "No active rides right now."));
+        }
 
-          return ListView(
-            children: rides.map((ride) {
-              final rideData = ride.data() as Map<String, dynamic>;
-              final rideId = ride.id;
-              final destination = rideData['destinationName'] ?? 'Unknown';
-              final seats = rideData['seatsAvailable'] ?? 0;
-              final rideStatus = rideData['status'] ?? 'open';
+        return ListView(
+          children: rides.map((ride) {
+            final rideData = ride.data() as Map<String, dynamic>;
+            final rideId = ride.id;
+            final destination = rideData['destinationName'] ?? 'Unknown';
+            final seats = rideData['seatsAvailable'] ?? 0;
+            final rideStatus = rideData['status'] ?? 'open';
 
-              return Card(
-                margin: const EdgeInsets.all(10),
-                elevation: 3,
-                child: ExpansionTile(
-                  title: Text(
-                    destination,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Text("Seats available: $seats"),
-                  children: [
-                    // ✅ Requests List
+            return Card(
+              margin: const EdgeInsets.all(10),
+              elevation: 3,
+              child: ExpansionTile(
+                title: Text(
+                  destination,
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text("Seats available: $seats"),
+                children: [
+                  if (!isHistory)
                     StreamBuilder<QuerySnapshot>(
-                      stream: ride.reference.collection('requests').snapshots(),
+                      stream:
+                          ride.reference.collection('requests').snapshots(),
                       builder: (context, reqSnap) {
                         if (reqSnap.hasError) {
                           return Padding(
@@ -235,9 +223,11 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
 
                         return Column(
                           children: requests.map((req) {
-                            final data = req.data() as Map<String, dynamic>;
+                            final data =
+                                req.data() as Map<String, dynamic>;
                             final status = data['status'] ?? 'pending';
-                            final rider = data['riderName'] ?? 'Unknown Rider';
+                            final rider =
+                                data['riderName'] ?? 'Unknown Rider';
 
                             Color statusColor;
                             switch (status) {
@@ -254,10 +244,8 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: statusColor,
-                                child: const Icon(
-                                  Icons.person,
-                                  color: Colors.white,
-                                ),
+                                child: const Icon(Icons.person,
+                                    color: Colors.white),
                               ),
                               title: Text(rider),
                               subtitle: Text("Status: $status"),
@@ -266,18 +254,14 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          icon: const Icon(
-                                            Icons.check,
-                                            color: Colors.green,
-                                          ),
+                                          icon: const Icon(Icons.check,
+                                              color: Colors.green),
                                           onPressed: () =>
                                               acceptRequest(rideId, req.id),
                                         ),
                                         IconButton(
-                                          icon: const Icon(
-                                            Icons.close,
-                                            color: Colors.red,
-                                          ),
+                                          icon: const Icon(Icons.close,
+                                              color: Colors.red),
                                           onPressed: () =>
                                               rejectRequest(rideId, req.id),
                                         ),
@@ -290,10 +274,10 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                       },
                     ),
 
-                    const Divider(),
+                  const Divider(),
 
-                    // 🚦 Ride control buttons
-                    // 🚦 Ride control buttons
+                  // 🚦 Ride controls
+                  if (!isHistory)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
                       child: Column(
@@ -301,9 +285,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                           if (rideStatus == 'open' || rideStatus == 'full')
                             ElevatedButton.icon(
                               onPressed: () async {
-                                await startRide(rideId); // Start ride normally
-
-                                // 🗺️ Then open Driver Live Map automatically
+                                await startRide(rideId);
                                 final destGeo =
                                     rideData['destinationLocation']
                                         as GeoPoint?;
@@ -317,14 +299,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                                       ),
                                     ),
                                   );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        '⚠️ No destination found for this ride.',
-                                      ),
-                                    ),
-                                  );
                                 }
                               },
                               icon: const Icon(Icons.play_arrow),
@@ -334,8 +308,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                                 foregroundColor: Colors.white,
                               ),
                             ),
-
-                          // 👇 NEW for ongoing rides
                           if (rideStatus == 'ongoing') ...[
                             ElevatedButton.icon(
                               onPressed: () => endRide(rideId),
@@ -374,28 +346,51 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                               ),
                             ),
                           ],
-
-                          if (rideStatus == 'completed')
-                            const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: Text(
-                                "✅ Ride Completed",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black54,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              );
-            }).toList(),
-          );
-        },
+
+                  if (isHistory)
+                    const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text(
+                        "✅ Ride Completed",
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("My Rides"),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: "Active"),
+              Tab(text: "History"),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            buildRideList(context, isHistory: false),
+            buildRideList(context, isHistory: true),
+          ],
+        ),
       ),
     );
   }
