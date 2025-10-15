@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ProfileSection extends StatefulWidget {
   final Map<String, dynamic>? userData;
@@ -29,6 +32,10 @@ class _ProfileSectionState extends State<ProfileSection> {
   String? _selectedBrand;
   bool _isEditing = false;
   bool _initialized = false;
+
+  final ImagePicker _picker = ImagePicker();
+  File? _selectedImage;
+  String? _profileImageUrl;
 
   final List<String> _brands = [
     'Audi',
@@ -71,6 +78,45 @@ class _ProfileSectionState extends State<ProfileSection> {
     return sorted;
   }
 
+  /// 🖼️ Pick and upload profile picture
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+      );
+      if (pickedFile == null) return;
+
+      setState(() => _selectedImage = File(pickedFile.path));
+
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_pictures')
+          .child('${widget.uid}.jpg');
+
+      await storageRef.putFile(_selectedImage!);
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .update({'profileImage': downloadUrl});
+
+      setState(() => _profileImageUrl = downloadUrl);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Profile picture updated!')),
+      );
+    } catch (e) {
+      if (e is FirebaseException) {
+        print('Firebase Storage Error: ${e.code} - ${e.message}');
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Error uploading image: $e')));
+    }
+  }
+
+  /// 💾 Save other profile info
   Future<void> _saveProfileToFirestore() async {
     try {
       final dataToUpdate = {
@@ -131,6 +177,7 @@ class _ProfileSectionState extends State<ProfileSection> {
           _modelController.text = userData['carModel'] ?? '';
           _selectedBrand = userData['carBrand'] ?? '';
           _otherBrandController.text = userData['otherBrand'] ?? '';
+          _profileImageUrl = userData['profileImage'];
           _initialized = true;
         }
 
@@ -143,10 +190,25 @@ class _ProfileSectionState extends State<ProfileSection> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircleAvatar(
-                    radius: 45,
-                    backgroundColor: Colors.grey,
-                    child: Icon(Icons.person, size: 55, color: Colors.white),
+                  GestureDetector(
+                    onTap: _isEditing ? _pickAndUploadImage : null,
+                    child: CircleAvatar(
+                      radius: 45,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: _selectedImage != null
+                          ? FileImage(_selectedImage!)
+                          : (_profileImageUrl != null
+                                ? NetworkImage(_profileImageUrl!)
+                                : null),
+                      child:
+                          (_selectedImage == null && _profileImageUrl == null)
+                          ? const Icon(
+                              Icons.person,
+                              size: 55,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
                   ),
                   const SizedBox(width: 18),
                   Expanded(
@@ -349,7 +411,7 @@ class _ProfileSectionState extends State<ProfileSection> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: IgnorePointer(
-        ignoring: !_isEditing, // ✅ Only interactable in edit mode
+        ignoring: !_isEditing,
         child: DropdownButtonFormField<String>(
           value: _selectedBrand?.isNotEmpty == true ? _selectedBrand : null,
           decoration: const InputDecoration(
@@ -363,9 +425,7 @@ class _ProfileSectionState extends State<ProfileSection> {
               )
               .toList(),
           onChanged: (value) {
-            if (_isEditing) {
-              setState(() => _selectedBrand = value);
-            }
+            if (_isEditing) setState(() => _selectedBrand = value);
           },
         ),
       ),

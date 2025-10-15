@@ -210,7 +210,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                 ),
                 subtitle: Text("Seats available: $seats"),
                 children: [
-                  // 👇 Always show ride requests, both active and history
                   StreamBuilder<QuerySnapshot>(
                     stream: ride.reference.collection('requests').snapshots(),
                     builder: (context, reqSnap) {
@@ -249,6 +248,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                             final data = req.data() as Map<String, dynamic>;
                             final status = data['status'] ?? 'pending';
                             final rider = data['riderName'] ?? 'Unknown Rider';
+                            final riderId = data['riderId'];
 
                             Color statusColor;
                             switch (status) {
@@ -263,12 +263,53 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                             }
 
                             return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: statusColor,
-                                child: const Icon(
-                                  Icons.person,
-                                  color: Colors.white,
-                                ),
+                              leading: FutureBuilder<DocumentSnapshot>(
+                                future: FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(riderId)
+                                    .get(),
+                                builder: (context, userSnap) {
+                                  if (userSnap.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return CircleAvatar(
+                                      backgroundColor: Colors.grey[300],
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: Colors.white,
+                                      ),
+                                    );
+                                  }
+
+                                  if (!userSnap.hasData ||
+                                      !userSnap.data!.exists) {
+                                    return CircleAvatar(
+                                      backgroundColor: statusColor,
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: Colors.white,
+                                      ),
+                                    );
+                                  }
+
+                                  final userData =
+                                      userSnap.data!.data()
+                                          as Map<String, dynamic>;
+                                  final imageUrl =
+                                      userData['profileImage'] as String?;
+
+                                  return CircleAvatar(
+                                    backgroundColor: Colors.grey[300],
+                                    backgroundImage: imageUrl != null
+                                        ? NetworkImage(imageUrl)
+                                        : null,
+                                    child: imageUrl == null
+                                        ? const Icon(
+                                            Icons.person,
+                                            color: Colors.white,
+                                          )
+                                        : null,
+                                  );
+                                },
                               ),
                               title: Text(rider),
                               subtitle: Text("Status: $status"),

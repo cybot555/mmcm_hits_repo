@@ -128,7 +128,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                 ],
               ),
-              Padding(
+              /*Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   "(${_role == "Passenger" ? "Hitcher" : _role})",
@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> {
                     color: Color.fromARGB(255, 99, 98, 98),
                   ),
                 ),
-              ),
+              ),*/
             ],
           ),
         ),
