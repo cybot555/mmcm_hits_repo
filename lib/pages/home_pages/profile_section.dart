@@ -5,9 +5,9 @@ class ProfileSection extends StatefulWidget {
   final Map<String, dynamic>? userData;
   final VoidCallback onLogout;
   final String role;
-  final String uid; // Firestore UID
+  final String uid;
 
-  ProfileSection({
+  const ProfileSection({
     super.key,
     required this.userData,
     required this.onLogout,
@@ -28,35 +28,47 @@ class _ProfileSectionState extends State<ProfileSection> {
 
   String? _selectedBrand;
   bool _isEditing = false;
+  bool _initialized = false;
 
   final List<String> _brands = [
-    'Audi','BMW','BYD','Changan','Chery','Chevrolet','Dongfeng','Foton',
-    'Ford','GAC','Geely','Great Wall','Honda','Hyundai','Isuzu','JAC','Jeep',
-    'Kia','Lexus','Mazda','Mercedes-Benz','MG','Mini','Mitsubishi','Nissan',
-    'Peugeot','Subaru','Suzuki','Tesla','Toyota','Volkswagen','Volvo',
+    'Audi',
+    'BMW',
+    'BYD',
+    'Changan',
+    'Chery',
+    'Chevrolet',
+    'Dongfeng',
+    'Foton',
+    'Ford',
+    'GAC',
+    'Geely',
+    'Great Wall',
+    'Honda',
+    'Hyundai',
+    'Isuzu',
+    'JAC',
+    'Jeep',
+    'Kia',
+    'Lexus',
+    'Mazda',
+    'Mercedes-Benz',
+    'MG',
+    'Mini',
+    'Mitsubishi',
+    'Nissan',
+    'Peugeot',
+    'Subaru',
+    'Suzuki',
+    'Tesla',
+    'Toyota',
+    'Volkswagen',
+    'Volvo',
   ];
 
   List<String> get _sortedBrands {
     final sorted = List<String>.from(_brands)..sort((a, b) => a.compareTo(b));
-    sorted.add('Others'); // ensure 'Others' always last
+    sorted.add('Others');
     return sorted;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserData();
-  }
-
-  void _loadUserData() {
-    if (widget.userData != null) {
-      _nameController.text = widget.userData!['name'] ?? '';
-      _phoneController.text = widget.userData!['phone'] ?? '';
-      _plateController.text = widget.userData!['plateNumber'] ?? '';
-      _modelController.text = widget.userData!['carModel'] ?? '';
-      _selectedBrand = widget.userData!['carBrand'] ?? '';
-      _otherBrandController.text = widget.userData!['otherBrand'] ?? '';
-    }
   }
 
   Future<void> _saveProfileToFirestore() async {
@@ -66,7 +78,9 @@ class _ProfileSectionState extends State<ProfileSection> {
         'phone': _phoneController.text,
         'plateNumber': _plateController.text,
         'carBrand': _selectedBrand,
-        'otherBrand': _otherBrandController.text,
+        'otherBrand': _selectedBrand == 'Others'
+            ? _otherBrandController.text
+            : '',
         'carModel': _modelController.text,
       };
 
@@ -76,157 +90,247 @@ class _ProfileSectionState extends State<ProfileSection> {
           .update(dataToUpdate);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully!')),
+        const SnackBar(
+          content: Text('✅ Profile updated successfully!'),
+          duration: Duration(seconds: 2),
+        ),
       );
     } catch (e) {
       debugPrint('Error saving profile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
     }
   }
 
-  void _cancelEdit() {
-    setState(() {
-      _isEditing = false;
-      _loadUserData(); // reload original data
-    });
-  }
+  void _cancelEdit() => setState(() => _isEditing = false);
 
   @override
   Widget build(BuildContext context) {
-    final isDriver = widget.role == "Driver";
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    if (widget.userData == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Center(child: Text("User data not found"));
+        }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // --- Profile Header
-          Row(
+        final userData = snapshot.data!.data() as Map<String, dynamic>;
+        final isDriver = userData['role'] == "Driver";
+
+        if (!_initialized) {
+          _nameController.text = userData['name'] ?? '';
+          _phoneController.text = userData['phone'] ?? '';
+          _plateController.text = userData['plateNumber'] ?? '';
+          _modelController.text = userData['carModel'] ?? '';
+          _selectedBrand = userData['carBrand'] ?? '';
+          _otherBrandController.text = userData['otherBrand'] ?? '';
+          _initialized = true;
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(
-                radius: 45,
-                backgroundColor: Colors.grey,
-                child: Icon(Icons.person, size: 55, color: Colors.white),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _nameController.text.isEmpty
-                          ? (widget.userData!['college'] ?? "")
-                          : _nameController.text,
-                      style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      widget.userData!['program'] ?? "",
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
+              // 🧑 Profile Header
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CircleAvatar(
+                    radius: 45,
+                    backgroundColor: Colors.grey,
+                    child: Icon(Icons.person, size: 55, color: Colors.white),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.emoji_transportation,
-                            size: 20, color: Colors.black54),
-                        const SizedBox(width: 6),
+                        // 🔹 Editable Name
+                        _isEditing
+                            ? TextField(
+                                controller: _nameController,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: UnderlineInputBorder(),
+                                  labelText: "Name",
+                                ),
+                              )
+                            : Text(
+                                _nameController.text.isEmpty
+                                    ? "Set name"
+                                    : _nameController.text,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+
+                        // 🔹 College and Program
                         Text(
-                          isDriver ? "Driver" : "Hitcher",
+                          userData['college'] ?? "",
                           style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        Text(
+                          userData['program'] ?? "",
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: Colors.black54,
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: isDriver
+                                      ? Colors.green
+                                      : Colors.blueGrey,
+                                  thickness: 1,
+                                  endIndent: 8,
+                                ),
+                              ),
+                              Text(
+                                isDriver ? "Driver" : "Hitcher",
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontStyle: FontStyle.italic,
+                                  color: isDriver
+                                      ? Colors.green[800]
+                                      : Colors.blueGrey[700],
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                              Expanded(
+                                child: Divider(
+                                  color: isDriver
+                                      ? Colors.green
+                                      : Colors.blueGrey,
+                                  thickness: 1,
+                                  indent: 8,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              Row(
-                children: [
-                  if (_isEditing)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.redAccent),
-                      tooltip: 'Cancel',
-                      onPressed: _cancelEdit,
-                    ),
-                  IconButton(
-                    icon: Icon(
-                      _isEditing ? Icons.check : Icons.edit,
-                      color: _isEditing ? Colors.green : Colors.blueAccent,
-                    ),
-                    tooltip: _isEditing ? 'Save' : 'Edit',
-                    onPressed: () async {
-                      if (_isEditing) await _saveProfileToFirestore();
-                      setState(() => _isEditing = !_isEditing);
-                    },
+                  ),
+                  Row(
+                    children: [
+                      if (_isEditing)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.redAccent,
+                          ),
+                          tooltip: 'Cancel',
+                          onPressed: _cancelEdit,
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          _isEditing ? Icons.check : Icons.edit,
+                          color: _isEditing ? Colors.green : Colors.blueAccent,
+                        ),
+                        tooltip: _isEditing ? 'Save' : 'Edit',
+                        onPressed: () async {
+                          if (_isEditing) await _saveProfileToFirestore();
+                          setState(() => _isEditing = !_isEditing);
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
 
-          const SizedBox(height: 25),
+              const SizedBox(height: 25),
 
-          // --- Fields
-          _buildTextField("Name", _nameController),
-          _buildTextField("Phone Number", _phoneController),
-          if (isDriver) ...[
-            _buildTextField("Plate Number", _plateController),
-            _buildBrandDropdown(),
-            if (_selectedBrand == 'Others')
-              _buildTextField("Specify Brand", _otherBrandController),
-            _buildTextField("Car Model", _modelController),
-          ],
-
-          const SizedBox(height: 25),
-
-          // --- Email
-          Row(
-            children: [
-              const Icon(Icons.email, size: 24),
-              const SizedBox(width: 10),
-              Text(
-                widget.userData!['email'] ?? "",
-                style: const TextStyle(fontSize: 18),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 30),
-
-          // --- Logout Button
-          Center(
-            child: ElevatedButton.icon(
-              onPressed: widget.onLogout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+              // 📞 Contact + Vehicle Info
+              const Text(
+                "Personal Information",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
                 ),
               ),
-              icon: const Icon(Icons.logout, color: Colors.white),
-              label: const Text(
-                "Logout",
-                style: TextStyle(fontSize: 16, color: Colors.white),
+              const SizedBox(height: 10),
+
+              _buildTextField("Phone Number", _phoneController),
+              if (isDriver) ...[
+                _buildTextField("Plate Number", _plateController),
+                _buildBrandDropdown(),
+                if (_selectedBrand == 'Others')
+                  _buildTextField("Specify Brand", _otherBrandController),
+                _buildTextField("Car Model", _modelController),
+              ],
+
+              const SizedBox(height: 25),
+
+              // 📧 Email
+              Row(
+                children: [
+                  const Icon(Icons.email, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      userData['email'] ?? "",
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ],
               ),
-            ),
+
+              const SizedBox(height: 30),
+
+              // 🚪 Logout
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: widget.onLogout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 30,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.logout, color: Colors.white),
+                  label: const Text(
+                    "Logout",
+                    style: TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // --- Helpers
+  // 🧩 Helpers
   Widget _buildTextField(String label, TextEditingController controller) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
@@ -244,23 +348,26 @@ class _ProfileSectionState extends State<ProfileSection> {
   Widget _buildBrandDropdown() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
-      child: DropdownButtonFormField<String>(
-        value: _selectedBrand?.isNotEmpty == true ? _selectedBrand : null,
-        decoration: const InputDecoration(
-          labelText: 'Car Brand',
-          border: OutlineInputBorder(),
+      child: IgnorePointer(
+        ignoring: !_isEditing, // ✅ Only interactable in edit mode
+        child: DropdownButtonFormField<String>(
+          value: _selectedBrand?.isNotEmpty == true ? _selectedBrand : null,
+          decoration: const InputDecoration(
+            labelText: 'Car Brand',
+            border: OutlineInputBorder(),
+          ),
+          dropdownColor: Colors.white,
+          items: _sortedBrands
+              .map(
+                (brand) => DropdownMenuItem(value: brand, child: Text(brand)),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (_isEditing) {
+              setState(() => _selectedBrand = value);
+            }
+          },
         ),
-        items: _sortedBrands
-            .map((brand) => DropdownMenuItem(
-                  value: brand,
-                  child: Text(brand),
-                ))
-            .toList(),
-        onChanged: _isEditing
-            ? (value) {
-                setState(() => _selectedBrand = value);
-              }
-            : null,
       ),
     );
   }

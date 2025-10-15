@@ -24,27 +24,32 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     final rideRef = db.collection('rides').doc(rideId);
     final requestRef = rideRef.collection('requests').doc(requestId);
 
-    await db.runTransaction((txn) async {
-      final rideSnap = await txn.get(rideRef);
-      final rideData = rideSnap.data() as Map<String, dynamic>;
-      final seatsLeft = rideData['seatsAvailable'] ?? 0;
+    await db
+        .runTransaction((txn) async {
+          final rideSnap = await txn.get(rideRef);
+          final rideData = rideSnap.data() as Map<String, dynamic>;
+          final seatsLeft = rideData['seatsAvailable'] ?? 0;
 
-      if (seatsLeft > 0) {
-        txn.update(requestRef, {'status': 'accepted'});
-        txn.update(rideRef, {
-          'seatsAvailable': seatsLeft - 1,
-          if (seatsLeft - 1 == 0) 'status': 'full',
+          if (seatsLeft > 0) {
+            txn.update(requestRef, {'status': 'accepted'});
+            txn.update(rideRef, {
+              'seatsAvailable': seatsLeft - 1,
+              if (seatsLeft - 1 == 0) 'status': 'full',
+            });
+          } else {
+            throw Exception('No seats left');
+          }
+        })
+        .then((_) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('✅ Request accepted')));
+        })
+        .catchError((e) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error accepting: $e')));
         });
-      } else {
-        throw Exception('No seats left');
-      }
-    }).then((_) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('✅ Request accepted')));
-    }).catchError((e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error accepting: $e')));
-    });
   }
 
   /// ❌ Reject request
@@ -55,8 +60,9 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
         .collection('requests')
         .doc(requestId)
         .update({'status': 'rejected'});
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
   }
 
   /// 🛰️ Check & request location permission
@@ -84,7 +90,8 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     if (permission == LocationPermission.deniedForever) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Location permissions are permanently denied.')),
+          content: Text('Location permissions are permanently denied.'),
+        ),
       );
       return false;
     }
@@ -99,24 +106,29 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     try {
       await db.collection('rides').doc(rideId).update({'status': 'ongoing'});
 
-      _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 15,
-        ),
-      ).listen((pos) {
-        dbRT.child('activeRides/$rideId/driverLocation').set({
-          'lat': pos.latitude,
-          'lng': pos.longitude,
-          'timestamp': ServerValue.timestamp,
-        });
-      });
+      _positionSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 15,
+            ),
+          ).listen((pos) {
+            dbRT.child('activeRides/$rideId/driverLocation').set({
+              'lat': pos.latitude,
+              'lng': pos.longitude,
+              'timestamp': ServerValue.timestamp,
+            });
+          });
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('🚗 Ride started — live tracking active!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🚗 Ride started — live tracking active!'),
+        ),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
     }
   }
 
@@ -129,11 +141,13 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
       await db.collection('rides').doc(rideId).update({'status': 'completed'});
       await dbRT.child('activeRides/$rideId').remove();
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('✅ Ride completed — tracking stopped.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Ride completed — tracking stopped.')),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
     }
   }
 
@@ -151,9 +165,7 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
           .where('driverId', isEqualTo: user.uid)
           .where(
             'status',
-            whereIn: isHistory
-                ? ['completed']
-                : ['open', 'full', 'ongoing'],
+            whereIn: isHistory ? ['completed'] : ['open', 'full', 'ongoing'],
           )
           .orderBy('createdAt', descending: true)
           .snapshots(),
@@ -169,9 +181,12 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
         final rides = rideSnap.data!.docs;
         if (rides.isEmpty) {
           return Center(
-              child: Text(isHistory
+            child: Text(
+              isHistory
                   ? "No completed rides yet."
-                  : "No active rides right now."));
+                  : "No active rides right now.",
+            ),
+          );
         }
 
         return ListView(
@@ -189,45 +204,51 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                 title: Text(
                   destination,
                   style: const TextStyle(
-                      fontSize: 17, fontWeight: FontWeight.bold),
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 subtitle: Text("Seats available: $seats"),
                 children: [
-                  if (!isHistory)
-                    StreamBuilder<QuerySnapshot>(
-                      stream:
-                          ride.reference.collection('requests').snapshots(),
-                      builder: (context, reqSnap) {
-                        if (reqSnap.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text('Error: ${reqSnap.error}'),
-                          );
-                        }
+                  // 👇 Always show ride requests, both active and history
+                  StreamBuilder<QuerySnapshot>(
+                    stream: ride.reference.collection('requests').snapshots(),
+                    builder: (context, reqSnap) {
+                      if (reqSnap.hasError) {
+                        return Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Text('Error: ${reqSnap.error}'),
+                        );
+                      }
 
-                        if (!reqSnap.hasData) {
-                          return const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: CircularProgressIndicator(),
-                          );
-                        }
+                      if (!reqSnap.hasData) {
+                        return const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(),
+                        );
+                      }
 
-                        final requests = reqSnap.data!.docs;
+                      final requests = reqSnap.data!.docs;
 
-                        if (requests.isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Text("No requests yet."),
-                          );
-                        }
+                      if (requests.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Text("No requests yet."),
+                        );
+                      }
 
-                        return Column(
-                          children: requests.map((req) {
-                            final data =
-                                req.data() as Map<String, dynamic>;
+                      final acceptedCount = requests
+                          .where(
+                            (r) => (r.data() as Map)['status'] == 'accepted',
+                          )
+                          .length;
+
+                      return Column(
+                        children: [
+                          ...requests.map((req) {
+                            final data = req.data() as Map<String, dynamic>;
                             final status = data['status'] ?? 'pending';
-                            final rider =
-                                data['riderName'] ?? 'Unknown Rider';
+                            final rider = data['riderName'] ?? 'Unknown Rider';
 
                             Color statusColor;
                             switch (status) {
@@ -244,24 +265,30 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: statusColor,
-                                child: const Icon(Icons.person,
-                                    color: Colors.white),
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                ),
                               ),
                               title: Text(rider),
                               subtitle: Text("Status: $status"),
-                              trailing: status == 'pending'
+                              trailing: (!isHistory && status == 'pending')
                                   ? Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          icon: const Icon(Icons.check,
-                                              color: Colors.green),
+                                          icon: const Icon(
+                                            Icons.check,
+                                            color: Colors.green,
+                                          ),
                                           onPressed: () =>
                                               acceptRequest(rideId, req.id),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.close,
-                                              color: Colors.red),
+                                          icon: const Icon(
+                                            Icons.close,
+                                            color: Colors.red,
+                                          ),
                                           onPressed: () =>
                                               rejectRequest(rideId, req.id),
                                         ),
@@ -269,14 +296,27 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                                     )
                                   : null,
                             );
-                          }).toList(),
-                        );
-                      },
-                    ),
+                          }),
+                          if (isHistory)
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                "✅ Ride Completed — $acceptedCount passenger(s)",
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black54,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
 
                   const Divider(),
 
-                  // 🚦 Ride controls
+                  // 🚦 Ride controls (active only)
                   if (!isHistory)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -349,19 +389,6 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
                         ],
                       ),
                     ),
-
-                  if (isHistory)
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text(
-                        "✅ Ride Completed",
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             );
@@ -376,20 +403,28 @@ class _DriverRequestsSectionState extends State<DriverRequestsSection> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text("My Rides"),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: "Active"),
-              Tab(text: "History"),
+        body: SafeArea(
+          child: Column(
+            children: [
+              const TabBar(
+                labelColor: Colors.black,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Color(0xFF00C853),
+                tabs: [
+                  Tab(text: "Active"),
+                  Tab(text: "History"),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    buildRideList(context, isHistory: false),
+                    buildRideList(context, isHistory: true),
+                  ],
+                ),
+              ),
             ],
           ),
-        ),
-        body: TabBarView(
-          children: [
-            buildRideList(context, isHistory: false),
-            buildRideList(context, isHistory: true),
-          ],
         ),
       ),
     );
