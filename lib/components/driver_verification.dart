@@ -67,14 +67,14 @@ class _DriverVerificationState extends State<DriverVerification> {
   // -------------------------------
   // UPLOAD BOX UI
   // -------------------------------
-  Widget _buildUploadBox(String label, bool isLicense) {
+  Widget _buildUploadBox(String label, bool isLicense, double boxWidth) {
     final file = isLicense ? licenseImage : orcrImage;
     final isUploaded = file != null;
 
     return GestureDetector(
       onTap: () => isLicense ? _pickLicense() : _pickORCR(),
       child: Container(
-        width: 140,
+        width: boxWidth,
         height: 100,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -95,7 +95,7 @@ class _DriverVerificationState extends State<DriverVerification> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    isLicense ? "Upload Driver's License" : "Upload OR/CR",
+                    label,
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 12, color: Colors.black),
                   ),
@@ -105,7 +105,7 @@ class _DriverVerificationState extends State<DriverVerification> {
                 borderRadius: BorderRadius.circular(10),
                 child: Image.file(
                   file,
-                  width: 140,
+                  width: boxWidth,
                   height: 100,
                   fit: BoxFit.cover,
                 ),
@@ -138,12 +138,32 @@ class _DriverVerificationState extends State<DriverVerification> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildUploadBox("Driver's License", true),
-              _buildUploadBox("OR/CR", false),
-            ],
+
+          // ✅ FIXED: responsive sizing using LayoutBuilder + Wrap to avoid overflow
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // total horizontal padding inside this container = 12 (left) + 12 (right) from padding
+              // but also consider some breathing room: we'll compute half of available width and clamp.
+              final availableWidth = constraints.maxWidth;
+              // spacing between the two boxes in Wrap is 10, so subtract that when splitting
+              final spacing = 10.0;
+              double computed = (availableWidth - spacing) / 2;
+
+              // clamp so boxes don't become too small or too wide
+              const minBoxWidth = 120.0;
+              const maxBoxWidth = 220.0;
+              final boxWidth = computed.clamp(minBoxWidth, maxBoxWidth);
+
+              return Wrap(
+                alignment: WrapAlignment.center,
+                spacing: spacing,
+                runSpacing: 10,
+                children: [
+                  _buildUploadBox("Driver's License", true, boxWidth),
+                  _buildUploadBox("OR/CR", false, boxWidth),
+                ],
+              );
+            },
           ),
         ],
       ),

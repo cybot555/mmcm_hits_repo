@@ -2,7 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mmcm_hits/pages/home.dart';
 import 'package:mmcm_hits/pages/login_or_signin_page.dart';
-//import 'package:mmcm_hits/pages/login_page.dart';
+import 'package:mmcm_hits/pages/email_verification_page.dart';
 
 class AuthPage extends StatelessWidget {
   const AuthPage({super.key});
@@ -13,14 +13,20 @@ class AuthPage extends StatelessWidget {
       body: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          //user is logged in
+          // ✅ User logged in
           if (snapshot.hasData) {
-            return HomePage();
+            final user = FirebaseAuth.instance.currentUser!;
+
+            // ✅ Check if email is verified
+            if (!user.emailVerified) {
+              return const EmailVerificationPage();
+            } else {
+              return const HomePage();
+            }
           }
-          //user is NOT logged in
-          else {
-            return LoginOrSigninPage();
-          }
+
+          // ❌ User not logged in
+          return const LoginOrSigninPage();
         },
       ),
     );

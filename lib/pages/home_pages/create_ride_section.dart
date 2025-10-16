@@ -290,8 +290,17 @@ class _MapPageState extends State<MapPage> {
               ),
               if (currentLocation != null)
                 CurrentLocationLayer(
-                  followOnLocationUpdate: FollowOnLocationUpdate.always,
-                ),
+                  alignPositionOnUpdate: AlignOnUpdate.always,
+                  alignDirectionOnUpdate: AlignOnUpdate.never,
+                      style: const LocationMarkerStyle(
+                      marker: DefaultLocationMarker(
+                        color: Colors.blue,
+                          child: Icon(Icons.navigation, color: Colors.white),
+                  ),
+                     markerSize: Size(40, 40),
+                      accuracyCircleColor: Colors.blueAccent,
+                  ),
+                    ),
               if (destination != null)
                 MarkerLayer(
                   markers: [

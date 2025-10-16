@@ -5,6 +5,9 @@ import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
 import 'package:mmcm_hits/components/driver_or_rider.dart';
 import 'package:mmcm_hits/components/driver_verification.dart';
+import 'package:mmcm_hits/services/auth_service.dart';
+import 'package:mmcm_hits/models/user_model.dart';
+import 'package:mmcm_hits/pages/email_verification_page.dart';
 
 class SignupPage extends StatefulWidget {
   final Function()? onTap;
@@ -15,7 +18,6 @@ class SignupPage extends StatefulWidget {
 }
 
 class _SignupPageState extends State<SignupPage> {
-  // Firebase + controllers
   final FirebaseFirestore db = FirebaseFirestore.instance;
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -24,63 +26,78 @@ class _SignupPageState extends State<SignupPage> {
   String? selectedCollege;
   String? selectedProgram;
   String? selectedRole;
-  bool driverDocsReady = false; // ✅ Track if both license & OR/CR uploaded
+  bool driverDocsReady = false;
+  bool _isLoading = false;
+
+  final AuthService _authService = AuthService();
 
   // -----------------------------
   // SIGNUP LOGIC
   // -----------------------------
   Future<void> signUpUser() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    setState(() => _isLoading = true);
 
     try {
-      // Password check
-      if (passwordController.text != confirmpasswordController.text) {
-        Navigator.pop(context);
+      final email = emailController.text.trim().toLowerCase();
+      final password = passwordController.text.trim();
+      final confirmPassword = confirmpasswordController.text.trim();
+
+      // ✅ School email restriction
+      if (!email.endsWith('@mcm.edu.ph')) {
+        setState(() => _isLoading = false);
+        showErrorMessage("Invalid Email");
+        return;
+      }
+
+      // ✅ Password match check
+      if (password != confirmPassword) {
+        setState(() => _isLoading = false);
         showErrorMessage("Passwords don't match!");
         return;
       }
 
-      // ✅ Require uploads for Driver role
+      // ✅ Require driver docs if Driver
       if (selectedRole == "Driver" && !driverDocsReady) {
-        Navigator.pop(context);
+        setState(() => _isLoading = false);
         showErrorMessage(
           "Please upload both License and OR/CR to register as a Driver!",
         );
         return;
       }
 
-      // Create account
-      final userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: emailController.text.trim(),
-            password: passwordController.text.trim(),
-          );
-
+      // ✅ Create account
+      final userCredential = await _authService.registerWithEmail(email, password);
       final uid = userCredential.user!.uid;
 
-      // Save user data to Firestore
-      await db.collection('users').doc(uid).set({
-        'uid': uid,
-        'email': emailController.text.trim(),
-        'college': selectedCollege ?? '',
-        'program': selectedProgram ?? '',
-        'role': selectedRole ?? 'Hitcher',
-        'driverVerified': selectedRole == "Driver" ? false : null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // ✅ Save user info to Firestore
+      final appUser = AppUser(
+        uid: uid,
+        email: email,
+        college: selectedCollege ?? '',
+        program: selectedProgram ?? '',
+        role: selectedRole ?? 'Hitcher',
+        driverVerified: selectedRole == "Driver" ? false : null,
+        createdAt: DateTime.now(),
+      );
+
+      await _authService.saveUserToFirestore(appUser);
+
+      // ✅ Send verification email
+      await _authService.sendEmailVerification();
 
       if (!mounted) return;
-      Navigator.pop(context); // close loading
 
-      // Redirect after sign up
-      Navigator.pushReplacementNamed(context, "/home");
+      // ✅ Stop loading and move to verification page
+      setState(() => _isLoading = false);
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const EmailVerificationPage()),
+      );
     } on FirebaseAuthException catch (e) {
-      Navigator.pop(context);
-      showErrorMessage(e.code);
+      setState(() => _isLoading = false);
+      showErrorMessage(e.message ?? "Something went wrong");
     }
   }
 
@@ -149,15 +166,13 @@ class _SignupPageState extends State<SignupPage> {
                     ),
                     const SizedBox(height: 25),
 
-                    // EMAIL
                     MyTextfield(
                       controller: emailController,
-                      hintText: 'Email',
+                      hintText: 'School Email',
                       obscureText: false,
                     ),
                     const SizedBox(height: 10),
 
-                    // PASSWORD
                     MyTextfield(
                       controller: passwordController,
                       hintText: 'Password',
@@ -165,15 +180,13 @@ class _SignupPageState extends State<SignupPage> {
                     ),
                     const SizedBox(height: 10),
 
-                    // CONFIRM PASSWORD
                     MyTextfield(
                       controller: confirmpasswordController,
                       hintText: 'Confirm Password',
                       obscureText: true,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
 
-                    // COLLEGE + PROGRAM
                     MyCollegeDropdown(
                       onChanged: (college, program) {
                         setState(() {
@@ -183,9 +196,8 @@ class _SignupPageState extends State<SignupPage> {
                       },
                       colleges: [],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
 
-                    // DRIVER OR HITCHER
                     DriverOrRider(
                       selectedRole: selectedRole,
                       onChanged: (role) {
@@ -195,7 +207,6 @@ class _SignupPageState extends State<SignupPage> {
                       },
                     ),
 
-                    // DRIVER VERIFICATION
                     if (selectedRole == "Driver")
                       DriverVerification(
                         onVerificationChanged: (ready) {
@@ -205,13 +216,14 @@ class _SignupPageState extends State<SignupPage> {
                         },
                       ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 25),
 
-                    // SIGN UP BUTTON
                     GestureDetector(
-                      onTap: (selectedRole == "Driver" && !driverDocsReady)
+                      onTap: _isLoading
                           ? null
-                          : signUpUser,
+                          : (selectedRole == "Driver" && !driverDocsReady)
+                              ? null
+                              : signUpUser,
                       child: Opacity(
                         opacity: (selectedRole == "Driver" && !driverDocsReady)
                             ? 0.5
@@ -223,15 +235,24 @@ class _SignupPageState extends State<SignupPage> {
                             color: const Color.fromARGB(255, 0, 255, 8),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Center(
-                            child: Text(
-                              "SIGNUP",
-                              style: TextStyle(
-                                color: Color.fromARGB(255, 0, 68, 255),
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          child: Center(
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3,
+                                      color: Colors.blue,
+                                    ),
+                                  )
+                                : const Text(
+                                    "SIGNUP",
+                                    style: TextStyle(
+                                      color: Color.fromARGB(255, 0, 68, 255),
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
