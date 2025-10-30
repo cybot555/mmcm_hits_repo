@@ -1,3 +1,4 @@
+import 'dart:io'; // ⬅️ NEW
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:mmcm_hits/components/driver_verification.dart';
 import 'package:mmcm_hits/services/auth_service.dart';
 import 'package:mmcm_hits/models/user_model.dart';
 import 'package:mmcm_hits/pages/email_verification_page.dart';
+import 'package:firebase_storage/firebase_storage.dart'; // ⬅️ NEW
 
 class SignupPage extends StatefulWidget {
   final Function()? onTap;
@@ -29,11 +31,15 @@ class _SignupPageState extends State<SignupPage> {
   bool driverDocsReady = false;
   bool _isLoading = false;
 
+  // ⬅️ NEW: hold picked files from DriverVerification
+  File? _licenseFile;
+  File? _orcrFile;
+
   final AuthService _authService = AuthService();
 
-  // -----------------------------
-  // SIGNUP LOGIC
-  // -----------------------------
+  /// -----------------------------
+  /// SIGNUP LOGIC
+  /// -----------------------------
   Future<void> signUpUser() async {
     setState(() => _isLoading = true);
 
@@ -45,7 +51,7 @@ class _SignupPageState extends State<SignupPage> {
       // ✅ School email restriction
       if (!email.endsWith('@mcm.edu.ph')) {
         setState(() => _isLoading = false);
-        showErrorMessage("Invalid Email");
+        showErrorMessage("Please use your school email (@mcm.edu.ph)");
         return;
       }
 
@@ -56,20 +62,30 @@ class _SignupPageState extends State<SignupPage> {
         return;
       }
 
-      // ✅ Require driver docs if Driver
-      if (selectedRole == "Driver" && !driverDocsReady) {
+      // ✅ Role-specific validation
+      if (selectedRole == null) {
         setState(() => _isLoading = false);
-        showErrorMessage(
-          "Please upload both License and OR/CR to register as a Driver!",
-        );
+        showErrorMessage("Please select your role (Driver or Hitcher).");
         return;
       }
 
-      // ✅ Create account
-      final userCredential = await _authService.registerWithEmail(email, password);
-      final uid = userCredential.user!.uid;
+      // ✅ Require driver docs if Driver
+      if (selectedRole == "Driver" &&
+          (_licenseFile == null || _orcrFile == null)) {
+        setState(() => _isLoading = false);
+        showErrorMessage("Upload both License and OR/CR before signing up!");
+        return;
+      }
 
-      // ✅ Save user info to Firestore
+      // ✅ Create Firebase user account
+      final userCredential = await _authService.registerWithEmail(
+        email,
+        password,
+      );
+      final user = userCredential.user!;
+      final uid = user.uid;
+
+      // ✅ Save initial user data to Firestore
       final appUser = AppUser(
         uid: uid,
         email: email,
@@ -79,17 +95,45 @@ class _SignupPageState extends State<SignupPage> {
         driverVerified: selectedRole == "Driver" ? false : null,
         createdAt: DateTime.now(),
       );
-
       await _authService.saveUserToFirestore(appUser);
+
+      // ✅ If Driver: upload docs to Storage, store URLs on user doc
+      if (selectedRole == "Driver") {
+        String? licenseUrl;
+        String? orcrUrl;
+
+        final storage = FirebaseStorage.instance;
+
+        // License
+        if (_licenseFile != null) {
+          final licRef = storage.ref().child('driver_docs/$uid/license.jpg');
+          await licRef.putFile(_licenseFile!);
+          licenseUrl = await licRef.getDownloadURL();
+        }
+
+        // OR/CR
+        if (_orcrFile != null) {
+          final orcrRef = storage.ref().child('driver_docs/$uid/orcr.jpg');
+          await orcrRef.putFile(_orcrFile!);
+          orcrUrl = await orcrRef.getDownloadURL();
+        }
+
+        // Merge URLs into user doc
+        await db.collection('users').doc(uid).set({
+          'licenseUrl': licenseUrl,
+          'orcrUrl': orcrUrl,
+        }, SetOptions(merge: true));
+      }
 
       // ✅ Send verification email
       await _authService.sendEmailVerification();
 
-      if (!mounted) return;
+      // ✅ Sign out right away so they can’t enter without verifying
+      await FirebaseAuth.instance.signOut();
 
-      // ✅ Stop loading and move to verification page
+      // ✅ Move to email verification page
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      await Future.delayed(const Duration(milliseconds: 150));
 
       Navigator.pushReplacement(
         context,
@@ -97,13 +141,13 @@ class _SignupPageState extends State<SignupPage> {
       );
     } on FirebaseAuthException catch (e) {
       setState(() => _isLoading = false);
-      showErrorMessage(e.message ?? "Something went wrong");
+      showErrorMessage(e.message ?? "Something went wrong during signup");
     }
   }
 
-  // -----------------------------
-  // ERROR POPUP
-  // -----------------------------
+  /// -----------------------------
+  /// ERROR POPUP
+  /// -----------------------------
   Future<void> showErrorMessage(String message) async {
     return showDialog(
       context: context,
@@ -119,9 +163,9 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  // -----------------------------
-  // UI
-  // -----------------------------
+  /// -----------------------------
+  /// UI
+  /// -----------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -214,16 +258,17 @@ class _SignupPageState extends State<SignupPage> {
                             driverDocsReady = ready;
                           });
                         },
+                        // ⬇️ NEW: capture picked files (no UI change)
+                        onFilesChanged: (license, orcr) {
+                          _licenseFile = license;
+                          _orcrFile = orcr;
+                        },
                       ),
 
                     const SizedBox(height: 25),
 
                     GestureDetector(
-                      onTap: _isLoading
-                          ? null
-                          : (selectedRole == "Driver" && !driverDocsReady)
-                              ? null
-                              : signUpUser,
+                      onTap: _isLoading ? null : signUpUser,
                       child: Opacity(
                         opacity: (selectedRole == "Driver" && !driverDocsReady)
                             ? 0.5
