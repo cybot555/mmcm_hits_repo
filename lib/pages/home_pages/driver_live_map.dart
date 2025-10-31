@@ -1,14 +1,12 @@
-import 'dart:async';
-import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:mmcm_hits/repositories/ride_repository.dart';
+import 'package:mmcm_hits/viewmodels/driver_live_map_viewmodel.dart';
+import 'package:provider/provider.dart';
 
-class DriverLiveMap extends StatefulWidget {
+class DriverLiveMap extends StatelessWidget {
   final String rideId;
   final GeoPoint destination;
 
@@ -19,186 +17,126 @@ class DriverLiveMap extends StatefulWidget {
   });
 
   @override
-  State<DriverLiveMap> createState() => _DriverLiveMapState();
+  Widget build(BuildContext context) {
+    final rideRepository = context.read<RideRepository>();
+
+    return ChangeNotifierProvider(
+      create: (_) => DriverLiveMapViewModel(
+        rideRepository,
+        rideId: rideId,
+        destination: destination,
+      )..initialise(),
+      child: const _DriverLiveMapView(),
+    );
+  }
 }
 
-class _DriverLiveMapState extends State<DriverLiveMap> {
-  final MapController _mapController = MapController();
-  LatLng? _currentPos;
-  List<LatLng> _routePoints = [];
-  final dbRT = FirebaseDatabase.instance.ref();
-
-  StreamSubscription<Position>? _posSub;
+class _DriverLiveMapView extends StatefulWidget {
+  const _DriverLiveMapView();
 
   @override
-  void initState() {
-    super.initState();
-    _initLocationStream();
-  }
+  State<_DriverLiveMapView> createState() => _DriverLiveMapViewState();
+}
 
-  // 🛰️ Initialize GPS tracking
-  Future<void> _initLocationStream() async {
-    // 1️⃣ Check if location services are on
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      await Geolocator.openLocationSettings();
-      return;
-    }
+class _DriverLiveMapViewState extends State<_DriverLiveMapView> {
+  final MapController _mapController = MapController();
+  LatLng? _lastCenter;
 
-    // 2️⃣ Permissions
-    LocationPermission perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
-      perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
-        return;
-      }
-    }
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<DriverLiveMapViewModel>(
+      builder: (context, viewModel, _) {
+        if (viewModel.currentPosition != null &&
+            viewModel.currentPosition != _lastCenter) {
+          _lastCenter = viewModel.currentPosition;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final center = viewModel.currentPosition!;
+            _mapController.move(center, _mapController.camera.zoom);
+          });
+        }
 
-    // 3️⃣ Get initial position to instantly show map
-    final initialPos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
+        if (viewModel.errorMessage != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            if (messenger == null) return;
+            messenger.showSnackBar(
+              SnackBar(content: Text(viewModel.errorMessage!)),
+            );
+            viewModel.resetError();
+          });
+        }
 
-    if (!mounted) return;
-    setState(() {
-      _currentPos = LatLng(initialPos.latitude, initialPos.longitude);
-    });
-
-    // 4️⃣ Draw initial route
-    await _drawRoute();
-
-    // 5️⃣ Begin continuous location updates
-    _posSub =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10, // send update after ~10 meters movement
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Live Ride Tracking'),
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
           ),
-        ).listen((pos) async {
-          if (!mounted) return;
-
-          final newPos = LatLng(pos.latitude, pos.longitude);
-          setState(() {
-            _currentPos = newPos;
-          });
-
-          // 🗺️ Auto-follow the driver as they move
-          _mapController.move(newPos, _mapController.camera.zoom);
-
-          // 🔥 Update Firebase Realtime Database
-          await dbRT.child('activeRides/${widget.rideId}/driverLocation').set({
-            'lat': pos.latitude,
-            'lng': pos.longitude,
-            'timestamp': ServerValue.timestamp,
-          });
-        });
-  }
-
-  // 🧭 Draw route between current position and destination
-  Future<void> _drawRoute() async {
-    if (_currentPos == null) return;
-
-    final dest = widget.destination;
-    final url =
-        "https://router.project-osrm.org/route/v1/driving/${_currentPos!.longitude},${_currentPos!.latitude};${dest.longitude},${dest.latitude}?overview=full&geometries=geojson";
-
-    try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 6));
-
-      if (response.statusCode == 200 && mounted) {
-        final data = json.decode(response.body);
-        final coords =
-            data['routes'][0]['geometry']['coordinates'] as List<dynamic>;
-        setState(() {
-          _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList();
-        });
-      }
-    } catch (e) {
-      debugPrint('⚠️ Error drawing route: $e');
-    }
+          body: viewModel.currentPosition == null
+              ? const Center(child: CircularProgressIndicator())
+              : FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: viewModel.currentPosition!,
+                    initialZoom: 15,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                    ),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
+                      userAgentPackageName: 'mmcm_hits_app',
+                    ),
+                    if (viewModel.routePoints.isNotEmpty)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: viewModel.routePoints,
+                            strokeWidth: 4,
+                            color: Colors.blueAccent,
+                          ),
+                        ],
+                      ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: viewModel.currentPosition!,
+                          width: 50,
+                          height: 50,
+                          child: const Icon(
+                            Icons.local_taxi,
+                            color: Colors.green,
+                            size: 38,
+                          ),
+                        ),
+                        Marker(
+                          point: LatLng(
+                            viewModel.destination.latitude,
+                            viewModel.destination.longitude,
+                          ),
+                          width: 50,
+                          height: 50,
+                          child: const Icon(
+                            Icons.location_pin,
+                            color: Colors.red,
+                            size: 42,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
-    _posSub?.cancel(); // ✅ Stop GPS stream when page closes
+    _mapController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Live Ride Tracking'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-      ),
-      body: _currentPos == null
-          ? const Center(child: CircularProgressIndicator())
-          : FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _currentPos!,
-                initialZoom: 15,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                ),
-              ),
-              children: [
-                // Base map tiles
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'mmcm_hits_app',
-                ),
-
-                // Route polyline
-                if (_routePoints.isNotEmpty)
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: _routePoints,
-                        strokeWidth: 4,
-                        color: Colors.blueAccent,
-                      ),
-                    ],
-                  ),
-
-                // Markers: driver + destination
-                MarkerLayer(
-                  markers: [
-                    // Driver (green)
-                    Marker(
-                      point: _currentPos!,
-                      width: 50,
-                      height: 50,
-                      child: const Icon(
-                        Icons.local_taxi,
-                        color: Colors.green,
-                        size: 38,
-                      ),
-                    ),
-                    // Destination (red)
-                    Marker(
-                      point: LatLng(
-                        widget.destination.latitude,
-                        widget.destination.longitude,
-                      ),
-                      width: 50,
-                      height: 50,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.red,
-                        size: 42,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-    );
   }
 }

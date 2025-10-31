@@ -1,78 +1,86 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'hitcher_live_map.dart';
+import 'package:mmcm_hits/models/ride.dart';
+import 'package:mmcm_hits/models/ride_request.dart';
+import 'package:mmcm_hits/pages/home_pages/hitcher_live_map.dart';
+import 'package:mmcm_hits/repositories/auth_repository.dart';
+import 'package:mmcm_hits/repositories/ride_repository.dart';
+import 'package:mmcm_hits/repositories/user_repository.dart';
+import 'package:mmcm_hits/viewmodels/passenger_rides_viewmodel.dart';
+import 'package:provider/provider.dart';
 
-class PassengerRidesSection extends StatefulWidget {
+class PassengerRidesSection extends StatelessWidget {
   const PassengerRidesSection({super.key});
 
   @override
-  State<PassengerRidesSection> createState() => _PassengerRidesSectionState();
-}
+  Widget build(BuildContext context) {
+    final rideRepository = context.read<RideRepository>();
+    final authRepository = context.read<AuthRepository>();
+    final userRepository = context.read<UserRepository>();
 
-class _PassengerRidesSectionState extends State<PassengerRidesSection> {
-  final user = FirebaseAuth.instance.currentUser!;
-  final db = FirebaseFirestore.instance;
+    return ChangeNotifierProvider(
+      create: (_) => PassengerRidesViewModel(
+        rideRepository,
+        authRepository,
+        userRepository,
+      ),
+      child: Consumer<PassengerRidesViewModel>(
+        builder: (context, viewModel, _) {
+          if (viewModel.errorMessage != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              if (messenger == null) return;
+              messenger.showSnackBar(
+                SnackBar(content: Text(viewModel.errorMessage!)),
+              );
+              viewModel.resetError();
+            });
+          }
 
-  /// 🔹 Send ride request
-  Future<void> sendRideRequest(String rideId) async {
-    try {
-      final userDoc = await db.collection('users').doc(user.uid).get();
-      if (!userDoc.exists) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('User profile not found')));
-        return;
-      }
-
-      final userData = userDoc.data()!;
-      final riderName = userData['name'] ?? 'Unknown Rider';
-
-      final reqRef = db.collection('rides').doc(rideId).collection('requests');
-      final existing = await reqRef
-          .where('riderId', isEqualTo: user.uid)
-          .limit(1)
-          .get();
-
-      if (existing.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You already requested this ride.')),
-        );
-        return;
-      }
-
-      await reqRef.add({
-        'riderId': user.uid,
-        'riderName': riderName,
-        'status': 'pending',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('✅ Ride request sent!')));
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error sending request: $e')));
-    }
-  }
-
-  /// 🗺️ Open live tracking
-  void openLiveTracking(String rideId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => HitcherLiveMap(rideId: rideId)),
+          return const DefaultTabController(
+            length: 2,
+            child: Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    TabBar(
+                      labelColor: Colors.black,
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: Color(0xFF00C853),
+                      tabs: [
+                        Tab(text: 'Active'),
+                        Tab(text: 'History'),
+                      ],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _RideList(isHistory: false),
+                          _RideList(isHistory: true),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
+}
 
-  /// 🧱 Ride list builder
-  Widget buildRideList({required bool isHistory}) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: db
-          .collection('rides')
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+class _RideList extends StatelessWidget {
+  final bool isHistory;
+
+  const _RideList({required this.isHistory});
+
+  @override
+  Widget build(BuildContext context) {
+    final viewModel = context.watch<PassengerRidesViewModel>();
+    return StreamBuilder<List<Ride>>(
+      stream: viewModel.ridesStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(child: Text('Error: ${snapshot.error}'));
@@ -81,384 +89,335 @@ class _PassengerRidesSectionState extends State<PassengerRidesSection> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final rides = snapshot.data!.docs;
+        final rides = snapshot.data!;
         if (rides.isEmpty) {
           return Center(
             child: Text(
               isHistory
-                  ? "No completed rides yet 📜"
-                  : "No rides available right now 🚗",
+                  ? 'No completed rides yet 📜'
+                  : 'No rides available right now 🚗',
               style: const TextStyle(fontSize: 16),
             ),
           );
         }
 
-        return ListView(
+        return ListView.builder(
           padding: const EdgeInsets.only(top: 10, bottom: 20),
-          children: rides.map((ride) {
-            final data = ride.data() as Map<String, dynamic>;
-            final rideId = ride.id;
-            final rideStatus = data['status'] ?? 'open';
-
-            return StreamBuilder<QuerySnapshot>(
-              stream: db
-                  .collection('rides')
-                  .doc(rideId)
-                  .collection('requests')
-                  .where('riderId', isEqualTo: user.uid)
-                  .limit(1)
-                  .snapshots(),
-              builder: (context, reqSnap) {
-                if (!reqSnap.hasData) return const SizedBox.shrink();
-                if (reqSnap.data!.docs.isEmpty) return const SizedBox.shrink();
-
-                final reqData =
-                    reqSnap.data!.docs.first.data() as Map<String, dynamic>;
-                final requestStatus = reqData['status'] ?? 'pending';
-
-                final isAccepted = requestStatus == 'accepted';
-                final isPending = requestStatus == 'pending';
-                final isRejected = requestStatus == 'rejected';
-                final isCompleted = rideStatus == 'completed';
-
-                // Hide irrelevant rides
-                if (isRejected) return const SizedBox.shrink();
-                if (isHistory) {
-                  if (!(isAccepted && isCompleted))
-                    return const SizedBox.shrink();
-                } else {
-                  if (!(isAccepted || isPending) || isCompleted) {
-                    return const SizedBox.shrink();
-                  }
-                }
-
-                final destination =
-                    data['destinationName'] ?? 'Unknown Destination';
-                final driverName = data['driverName'] ?? 'Unknown Driver';
-                final driverId = data['driverId'];
-                final plate = data['plateNumber'] ?? 'N/A';
-                final seats = data['seatsAvailable'] ?? 0;
-
-                // 🎨 Button state
-                Color buttonColor;
-                String buttonText;
-                bool enabled = false;
-                bool showTrackButton = false;
-
-                if (isCompleted) {
-                  buttonColor = Colors.grey;
-                  buttonText = '✅ Ride Completed';
-                } else if (isAccepted && rideStatus == 'ongoing') {
-                  buttonColor = Colors.blueAccent;
-                  buttonText = '🚗 Ride In Progress';
-                  showTrackButton = true;
-                } else if (isAccepted && rideStatus == 'open') {
-                  buttonColor = Colors.green;
-                  buttonText = 'Accepted ✅';
-                  showTrackButton = true;
-                } else if (isPending) {
-                  buttonColor = Colors.orange;
-                  buttonText = 'Requested 🕒';
-                } else {
-                  buttonColor = const Color(0xFF59E70C);
-                  buttonText = 'Request Ride';
-                  enabled = true;
-                }
-
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 👤 Driver header with pfp
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            FutureBuilder<DocumentSnapshot>(
-                              future: db
-                                  .collection('users')
-                                  .doc(driverId)
-                                  .get(),
-                              builder: (context, driverSnap) {
-                                if (driverSnap.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const CircleAvatar(
-                                    radius: 25,
-                                    backgroundColor: Colors.grey,
-                                    child: Icon(
-                                      Icons.person,
-                                      color: Colors.white,
-                                    ),
-                                  );
-                                }
-                                if (!driverSnap.hasData ||
-                                    !driverSnap.data!.exists) {
-                                  return const CircleAvatar(
-                                    radius: 25,
-                                    backgroundColor: Colors.grey,
-                                    child: Icon(
-                                      Icons.person,
-                                      color: Colors.white,
-                                    ),
-                                  );
-                                }
-                                final driverData =
-                                    driverSnap.data!.data()
-                                        as Map<String, dynamic>;
-                                final imageUrl =
-                                    driverData['profileImage'] as String?;
-                                return CircleAvatar(
-                                  radius: 25,
-                                  backgroundColor: Colors.grey[300],
-                                  backgroundImage: imageUrl != null
-                                      ? NetworkImage(imageUrl)
-                                      : null,
-                                  child: imageUrl == null
-                                      ? const Icon(
-                                          Icons.person,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    driverName,
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Plate: $plate",
-                                    style: const TextStyle(
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Seats: $seats",
-                                    style: const TextStyle(
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-                        Text(
-                          "Destination: $destination",
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                        const SizedBox(height: 14),
-
-                        // 🧭 Buttons
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: buttonColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                minimumSize: const Size.fromHeight(45),
-                              ),
-                              onPressed: enabled
-                                  ? () => sendRideRequest(ride.id)
-                                  : null,
-                              icon: const Icon(Icons.send),
-                              label: Text(buttonText),
-                            ),
-                            if (showTrackButton) ...[
-                              const SizedBox(height: 8),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blueAccent,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  minimumSize: const Size.fromHeight(42),
-                                ),
-                                onPressed: () => openLiveTracking(ride.id),
-                                icon: const Icon(Icons.map),
-                                label: const Text("Track Ride"),
-                              ),
-                            ],
-                          ],
-                        ),
-
-                        // 🧍‍♀️ Show Other Hitchers (History only)
-                        if (isHistory && isCompleted) ...[
-                          const SizedBox(height: 20),
-                          const Text(
-                            "Other Hitchers",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          StreamBuilder<QuerySnapshot>(
-                            stream: db
-                                .collection('rides')
-                                .doc(rideId)
-                                .collection('requests')
-                                .where('status', isEqualTo: 'accepted')
-                                .snapshots(),
-                            builder: (context, hitchSnap) {
-                              if (hitchSnap.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                  child: CircularProgressIndicator(),
-                                );
-                              }
-                              if (!hitchSnap.hasData ||
-                                  hitchSnap.data!.docs.isEmpty) {
-                                return const Text(
-                                  "No other hitchers joined this ride.",
-                                  style: TextStyle(color: Colors.black54),
-                                );
-                              }
-
-                              final hitchers = hitchSnap.data!.docs.where((h) {
-                                final data = h.data() as Map<String, dynamic>;
-                                return data['riderId'] != user.uid;
-                              }).toList();
-
-                              if (hitchers.isEmpty) {
-                                return const Text(
-                                  "You were the only hitcher 😊",
-                                  style: TextStyle(color: Colors.black54),
-                                );
-                              }
-
-                              return SizedBox(
-                                height: 80,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: hitchers.length,
-                                  itemBuilder: (context, index) {
-                                    final hitcher =
-                                        hitchers[index].data() as Map;
-                                    final riderId = hitcher['riderId'];
-                                    final riderName =
-                                        hitcher['riderName'] ?? 'Unknown';
-
-                                    return FutureBuilder<DocumentSnapshot>(
-                                      future: db
-                                          .collection('users')
-                                          .doc(riderId)
-                                          .get(),
-                                      builder: (context, userSnap) {
-                                        String? img;
-                                        if (userSnap.hasData &&
-                                            userSnap.data!.exists) {
-                                          img =
-                                              (userSnap.data!.data()
-                                                      as Map)['profileImage']
-                                                  as String?;
-                                        }
-                                        return Container(
-                                          width: 70,
-                                          margin: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              CircleAvatar(
-                                                radius: 24,
-                                                backgroundColor:
-                                                    Colors.grey[300],
-                                                backgroundImage: img != null
-                                                    ? NetworkImage(img)
-                                                    : null,
-                                                child: img == null
-                                                    ? const Icon(
-                                                        Icons.person,
-                                                        color: Colors.white,
-                                                      )
-                                                    : null,
-                                              ),
-                                              const SizedBox(height: 5),
-                                              Text(
-                                                riderName.split(' ').first,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.black87,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
+          itemCount: rides.length,
+          itemBuilder: (context, index) {
+            final ride = rides[index];
+            return _RideCard(
+              ride: ride,
+              isHistory: isHistory,
             );
-          }).toList(),
+          },
         );
       },
     );
   }
+}
+
+class _RideCard extends StatelessWidget {
+  final Ride ride;
+  final bool isHistory;
+
+  const _RideCard({
+    required this.ride,
+    required this.isHistory,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            children: [
-              const TabBar(
-                labelColor: Colors.black,
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: Color(0xFF00C853),
-                tabs: [
-                  Tab(text: "Active"),
-                  Tab(text: "History"),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
+    final viewModel = context.read<PassengerRidesViewModel>();
+
+    return StreamBuilder<RideRequest?>(
+      stream: viewModel.watchRequestForRide(ride.id),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final request = snapshot.data;
+        if (request == null) return const SizedBox.shrink();
+
+        final rideStatus = ride.status;
+        final requestStatus = request.status;
+
+        final isAccepted = requestStatus == 'accepted';
+        final isPending = requestStatus == 'pending';
+        final isRejected = requestStatus == 'rejected';
+        final isCompleted = rideStatus == 'completed';
+
+        if (isRejected) return const SizedBox.shrink();
+        if (isHistory) {
+          if (!(isAccepted && isCompleted)) return const SizedBox.shrink();
+        } else {
+          if (!(isAccepted || isPending) || isCompleted) {
+            return const SizedBox.shrink();
+          }
+        }
+
+        final destination = ride.destinationName.isNotEmpty
+            ? ride.destinationName
+            : 'Unknown Destination';
+        final driverName =
+            ride.driverName.isNotEmpty ? ride.driverName : 'Unknown Driver';
+
+        Color buttonColor;
+        String buttonText;
+        bool enabled = false;
+        bool showTrack = false;
+
+        if (isCompleted) {
+          buttonColor = Colors.grey;
+          buttonText = '✅ Ride Completed';
+        } else if (isAccepted && rideStatus == 'ongoing') {
+          buttonColor = Colors.blueAccent;
+          buttonText = '🚗 Ride In Progress';
+          showTrack = true;
+        } else if (isAccepted && rideStatus == 'open') {
+          buttonColor = Colors.green;
+          buttonText = 'Accepted ✅';
+          showTrack = true;
+        } else if (isPending) {
+          buttonColor = Colors.orange;
+          buttonText = 'Requested 🕒';
+        } else {
+          buttonColor = const Color(0xFF59E70C);
+          buttonText = 'Request Ride';
+          enabled = true;
+        }
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          elevation: 3,
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _DriverHeader(driverId: ride.driverId, driverName: driverName),
+                const SizedBox(height: 10),
+                Text(
+                  destination,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    buildRideList(isHistory: false),
-                    buildRideList(isHistory: true),
+                    const Icon(Icons.confirmation_number, size: 18),
+                    const SizedBox(width: 6),
+                    Text('Seats left: ${ride.seatsAvailable}'),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.directions_car, size: 18),
+                    const SizedBox(width: 6),
+                    Text('Plate: ${ride.plateNumber}'),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: buttonColor,
+                    minimumSize: const Size.fromHeight(42),
+                  ),
+                  onPressed: !enabled
+                      ? null
+                      : () async {
+                          final success =
+                              await viewModel.sendRideRequest(ride.id);
+                          final messenger = ScaffoldMessenger.maybeOf(context);
+                          if (messenger == null) return;
+                          if (success) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('✅ Ride request sent!'),
+                              ),
+                            );
+                          } else if (viewModel.errorMessage != null) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(viewModel.errorMessage!),
+                              ),
+                            );
+                            viewModel.resetError();
+                          }
+                        },
+                  child: Text(
+                    buttonText,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                if (showTrack)
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HitcherLiveMap(rideId: ride.id),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.map),
+                    label: const Text('Track Ride'),
+                  ),
+                if (isHistory) _CompletedRideInfo(rideId: ride.id),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DriverHeader extends StatelessWidget {
+  final String driverId;
+  final String driverName;
+
+  const _DriverHeader({
+    required this.driverId,
+    required this.driverName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final userRepository = context.read<UserRepository>();
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: userRepository.fetchRawUserDoc(driverId),
+      builder: (context, snapshot) {
+        String? imageUrl;
+        if (snapshot.hasData && snapshot.data!.data() != null) {
+          imageUrl = snapshot.data!.data()!['profileImage'] as String?;
+        }
+        return Row(
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: Colors.grey,
+              backgroundImage:
+                  imageUrl != null ? NetworkImage(imageUrl) : null,
+              child: imageUrl == null
+                  ? const Icon(Icons.person, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    driverName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Driver • Verified',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CompletedRideInfo extends StatelessWidget {
+  final String rideId;
+
+  const _CompletedRideInfo({required this.rideId});
+
+  @override
+  Widget build(BuildContext context) {
+    final rideRepository = context.read<RideRepository>();
+    return StreamBuilder<List<RideRequest>>(
+      stream: rideRepository.watchRideRequests(rideId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final hitchers = snapshot.data!
+            .where((request) => request.status == 'accepted')
+            .toList();
+
+        if (hitchers.isEmpty) {
+          return const Text(
+            'No other hitchers joined this ride.',
+            style: TextStyle(color: Colors.black54),
+          );
+        }
+
+        return SizedBox(
+          height: 80,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: hitchers.length,
+            itemBuilder: (context, index) {
+              final hitcher = hitchers[index];
+              return _HitcherAvatar(riderId: hitcher.riderId);
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HitcherAvatar extends StatelessWidget {
+  final String riderId;
+
+  const _HitcherAvatar({required this.riderId});
+
+  @override
+  Widget build(BuildContext context) {
+    final userRepository = context.read<UserRepository>();
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: userRepository.fetchRawUserDoc(riderId),
+      builder: (context, snapshot) {
+        String? img;
+        String displayName = 'Unknown';
+        if (snapshot.hasData && snapshot.data!.data() != null) {
+          final data = snapshot.data!.data()!;
+          img = data['profileImage'] as String?;
+          displayName = (data['name'] ?? data['email'] ?? 'Unknown') as String;
+        }
+
+        return Container(
+          width: 70,
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: img != null ? NetworkImage(img) : null,
+                child: img == null
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 5),
+              Text(
+                displayName.split(' ').first,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

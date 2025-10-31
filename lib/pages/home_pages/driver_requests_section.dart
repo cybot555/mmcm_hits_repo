@@ -1,472 +1,420 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:geolocator/geolocator.dart';
-import 'driver_live_map.dart';
+import 'package:mmcm_hits/models/ride.dart';
+import 'package:mmcm_hits/models/ride_request.dart';
+import 'package:mmcm_hits/pages/home_pages/driver_live_map.dart';
+import 'package:mmcm_hits/repositories/auth_repository.dart';
+import 'package:mmcm_hits/repositories/ride_repository.dart';
+import 'package:mmcm_hits/repositories/user_repository.dart';
+import 'package:mmcm_hits/viewmodels/driver_requests_viewmodel.dart';
+import 'package:provider/provider.dart';
 
-class DriverRequestsSection extends StatefulWidget {
+class DriverRequestsSection extends StatelessWidget {
   const DriverRequestsSection({super.key});
 
   @override
-  State<DriverRequestsSection> createState() => _DriverRequestsSectionState();
+  Widget build(BuildContext context) {
+    final rideRepository = context.read<RideRepository>();
+    final authRepository = context.read<AuthRepository>();
+
+    return ChangeNotifierProvider(
+      create: (_) => DriverRequestsViewModel(rideRepository, authRepository),
+      child: Consumer<DriverRequestsViewModel>(
+        builder: (context, viewModel, _) {
+          if (viewModel.errorMessage != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              if (messenger == null) return;
+              messenger.showSnackBar(
+                SnackBar(content: Text(viewModel.errorMessage!)),
+              );
+              viewModel.resetError();
+            });
+          }
+
+          return const DefaultTabController(
+            length: 2,
+            child: Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    TabBar(
+                      labelColor: Colors.black,
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: Color(0xFF00C853),
+                      tabs: [
+                        Tab(text: 'Active'),
+                        Tab(text: 'History'),
+                      ],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _DriverRideList(isHistory: false),
+                          _DriverRideList(isHistory: true),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
-class _DriverRequestsSectionState extends State<DriverRequestsSection> {
-  final user = FirebaseAuth.instance.currentUser!;
-  final db = FirebaseFirestore.instance;
-  final dbRT = FirebaseDatabase.instance.ref();
-  StreamSubscription<Position>? _positionSubscription;
+class _DriverRideList extends StatelessWidget {
+  final bool isHistory;
 
-  /// ✅ Accept request
-  Future<void> acceptRequest(String rideId, String requestId) async {
-    final rideRef = db.collection('rides').doc(rideId);
-    final requestRef = rideRef.collection('requests').doc(requestId);
-
-    await db
-        .runTransaction((txn) async {
-          final rideSnap = await txn.get(rideRef);
-          final rideData = rideSnap.data() as Map<String, dynamic>;
-          final seatsLeft = rideData['seatsAvailable'] ?? 0;
-
-          if (seatsLeft > 0) {
-            txn.update(requestRef, {'status': 'accepted'});
-            txn.update(rideRef, {
-              'seatsAvailable': seatsLeft - 1,
-              if (seatsLeft - 1 == 0) 'status': 'full',
-            });
-          } else {
-            throw Exception('No seats left');
-          }
-        })
-        .then((_) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('✅ Request accepted')));
-        })
-        .catchError((e) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error accepting: $e')));
-        });
-  }
-
-  /// ❌ Reject request
-  Future<void> rejectRequest(String rideId, String requestId) async {
-    await db
-        .collection('rides')
-        .doc(rideId)
-        .collection('requests')
-        .doc(requestId)
-        .update({'status': 'rejected'});
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('❌ Request rejected')));
-  }
-
-  /// 🛰️ Check & request location permission
-  Future<bool> _checkAndRequestLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enable location services.')),
-      );
-      await Geolocator.openLocationSettings();
-      return false;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission denied.')),
-        );
-        return false;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location permissions are permanently denied.'),
-        ),
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  /// 🚗 Start ride and begin live tracking
-  Future<void> startRide(String rideId) async {
-    if (!await _checkAndRequestLocation()) return;
-
-    try {
-      await db.collection('rides').doc(rideId).update({'status': 'ongoing'});
-
-      _positionSubscription =
-          Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              distanceFilter: 15,
-            ),
-          ).listen((pos) {
-            dbRT.child('activeRides/$rideId/driverLocation').set({
-              'lat': pos.latitude,
-              'lng': pos.longitude,
-              'timestamp': ServerValue.timestamp,
-            });
-          });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚗 Ride started — live tracking active!'),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error starting ride: $e')));
-    }
-  }
-
-  /// 🏁 End ride & stop tracking
-  Future<void> endRide(String rideId) async {
-    try {
-      await _positionSubscription?.cancel();
-      _positionSubscription = null;
-
-      await db.collection('rides').doc(rideId).update({'status': 'completed'});
-      await dbRT.child('activeRides/$rideId').remove();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Ride completed — tracking stopped.')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error ending ride: $e')));
-    }
-  }
+  const _DriverRideList({required this.isHistory});
 
   @override
-  void dispose() {
-    _positionSubscription?.cancel();
-    super.dispose();
-  }
+  Widget build(BuildContext context) {
+    final viewModel = context.watch<DriverRequestsViewModel>();
 
-  /// 📋 Builds ride list (shared by Active & History tabs)
-  Widget buildRideList(BuildContext context, {required bool isHistory}) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: db
-          .collection('rides')
-          .where('driverId', isEqualTo: user.uid)
-          .where(
-            'status',
-            whereIn: isHistory ? ['completed'] : ['open', 'full', 'ongoing'],
-          )
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
-      builder: (context, rideSnap) {
-        if (rideSnap.hasError) {
-          return Center(child: Text('Error: ${rideSnap.error}'));
+    return StreamBuilder<List<Ride>>(
+      stream: viewModel.watchRides(history: isHistory),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
         }
-
-        if (!rideSnap.hasData) {
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final rides = rideSnap.data!.docs;
+        final rides = snapshot.data!;
         if (rides.isEmpty) {
           return Center(
             child: Text(
               isHistory
-                  ? "No completed rides yet."
-                  : "No active rides right now.",
+                  ? 'No completed rides yet.'
+                  : 'No active rides right now.',
             ),
           );
         }
 
-        return ListView(
-          children: rides.map((ride) {
-            final rideData = ride.data() as Map<String, dynamic>;
-            final rideId = ride.id;
-            final destination = rideData['destinationName'] ?? 'Unknown';
-            final seats = rideData['seatsAvailable'] ?? 0;
-            final rideStatus = rideData['status'] ?? 'open';
-
-            return Card(
-              margin: const EdgeInsets.all(10),
-              elevation: 3,
-              child: ExpansionTile(
-                title: Text(
-                  destination,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                subtitle: Text("Seats available: $seats"),
-                children: [
-                  StreamBuilder<QuerySnapshot>(
-                    stream: ride.reference.collection('requests').snapshots(),
-                    builder: (context, reqSnap) {
-                      if (reqSnap.hasError) {
-                        return Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text('Error: ${reqSnap.error}'),
-                        );
-                      }
-
-                      if (!reqSnap.hasData) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: CircularProgressIndicator(),
-                        );
-                      }
-
-                      final requests = reqSnap.data!.docs;
-
-                      if (requests.isEmpty) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text("No requests yet."),
-                        );
-                      }
-
-                      final acceptedCount = requests
-                          .where(
-                            (r) => (r.data() as Map)['status'] == 'accepted',
-                          )
-                          .length;
-
-                      return Column(
-                        children: [
-                          ...requests.map((req) {
-                            final data = req.data() as Map<String, dynamic>;
-                            final status = data['status'] ?? 'pending';
-                            final rider = data['riderName'] ?? 'Unknown Rider';
-                            final riderId = data['riderId'];
-
-                            Color statusColor;
-                            switch (status) {
-                              case 'accepted':
-                                statusColor = Colors.green;
-                                break;
-                              case 'rejected':
-                                statusColor = Colors.red;
-                                break;
-                              default:
-                                statusColor = Colors.orange;
-                            }
-
-                            return ListTile(
-                              leading: FutureBuilder<DocumentSnapshot>(
-                                future: FirebaseFirestore.instance
-                                    .collection('users')
-                                    .doc(riderId)
-                                    .get(),
-                                builder: (context, userSnap) {
-                                  if (userSnap.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return CircleAvatar(
-                                      backgroundColor: Colors.grey[300],
-                                      child: const Icon(
-                                        Icons.person,
-                                        color: Colors.white,
-                                      ),
-                                    );
-                                  }
-
-                                  if (!userSnap.hasData ||
-                                      !userSnap.data!.exists) {
-                                    return CircleAvatar(
-                                      backgroundColor: statusColor,
-                                      child: const Icon(
-                                        Icons.person,
-                                        color: Colors.white,
-                                      ),
-                                    );
-                                  }
-
-                                  final userData =
-                                      userSnap.data!.data()
-                                          as Map<String, dynamic>;
-                                  final imageUrl =
-                                      userData['profileImage'] as String?;
-
-                                  return CircleAvatar(
-                                    backgroundColor: Colors.grey[300],
-                                    backgroundImage: imageUrl != null
-                                        ? NetworkImage(imageUrl)
-                                        : null,
-                                    child: imageUrl == null
-                                        ? const Icon(
-                                            Icons.person,
-                                            color: Colors.white,
-                                          )
-                                        : null,
-                                  );
-                                },
-                              ),
-                              title: Text(rider),
-                              subtitle: Text("Status: $status"),
-                              trailing: (!isHistory && status == 'pending')
-                                  ? Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.check,
-                                            color: Colors.green,
-                                          ),
-                                          onPressed: () =>
-                                              acceptRequest(rideId, req.id),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.close,
-                                            color: Colors.red,
-                                          ),
-                                          onPressed: () =>
-                                              rejectRequest(rideId, req.id),
-                                        ),
-                                      ],
-                                    )
-                                  : null,
-                            );
-                          }),
-                          if (isHistory)
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                "✅ Ride Completed — $acceptedCount passenger(s)",
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black54,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-
-                  const Divider(),
-
-                  // 🚦 Ride controls (active only)
-                  if (!isHistory)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Column(
-                        children: [
-                          if (rideStatus == 'open' || rideStatus == 'full')
-                            ElevatedButton.icon(
-                              onPressed: () async {
-                                await startRide(rideId);
-                                final destGeo =
-                                    rideData['destinationLocation']
-                                        as GeoPoint?;
-                                if (destGeo != null && context.mounted) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DriverLiveMap(
-                                        rideId: rideId,
-                                        destination: destGeo,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              icon: const Icon(Icons.play_arrow),
-                              label: const Text("Start Ride"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blueAccent,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          if (rideStatus == 'ongoing') ...[
-                            ElevatedButton.icon(
-                              onPressed: () => endRide(rideId),
-                              icon: const Icon(Icons.flag),
-                              label: const Text("End Ride"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                final destGeo =
-                                    rideData['destinationLocation']
-                                        as GeoPoint?;
-                                if (destGeo != null) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DriverLiveMap(
-                                        rideId: rideId,
-                                        destination: destGeo,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              icon: const Icon(Icons.map_outlined),
-                              label: const Text("View Live Map"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blueAccent,
-                                side: const BorderSide(
-                                  color: Colors.blueAccent,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            );
-          }).toList(),
+        return ListView.builder(
+          itemCount: rides.length,
+          itemBuilder: (context, index) {
+            final ride = rides[index];
+            return _DriverRideCard(ride: ride, isHistory: isHistory);
+          },
         );
       },
     );
   }
+}
+
+class _DriverRideCard extends StatelessWidget {
+  final Ride ride;
+  final bool isHistory;
+
+  const _DriverRideCard({
+    required this.ride,
+    required this.isHistory,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            children: [
-              const TabBar(
-                labelColor: Colors.black,
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: Color(0xFF00C853),
-                tabs: [
-                  Tab(text: "Active"),
-                  Tab(text: "History"),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    buildRideList(context, isHistory: false),
-                    buildRideList(context, isHistory: true),
-                  ],
-                ),
-              ),
-            ],
+    final viewModel = context.read<DriverRequestsViewModel>();
+    final destination =
+        ride.destinationName.isNotEmpty ? ride.destinationName : 'Unknown';
+
+    return Card(
+      margin: const EdgeInsets.all(10),
+      elevation: 3,
+      child: ExpansionTile(
+        title: Text(
+          destination,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
           ),
         ),
+        subtitle: Text('Seats available: ${ride.seatsAvailable}'),
+        children: [
+          StreamBuilder<List<RideRequest>>(
+            stream: viewModel.watchRideRequests(ride.id),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text('Error: ${snapshot.error}'),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              final requests = snapshot.data!;
+              if (requests.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Text('No requests yet.'),
+                );
+              }
+
+              final acceptedCount = requests
+                  .where((req) => req.status == 'accepted')
+                  .length;
+
+              return Column(
+                children: [
+                  ...requests.map(
+                    (request) => _RequestTile(
+                      rideId: ride.id,
+                      request: request,
+                      isHistory: isHistory,
+                    ),
+                  ),
+                  if (isHistory)
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        '✅ Ride Completed — $acceptedCount passenger(s)',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const Divider(),
+          if (!isHistory)
+            _RideControls(
+              ride: ride,
+              onStart: () async {
+                final success = await viewModel.startRide(ride.id);
+                final messenger = ScaffoldMessenger.maybeOf(context);
+                if (messenger == null) return;
+
+                if (success) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('🚗 Ride started — live tracking active!'),
+                    ),
+                  );
+                  final destination = ride.destinationLocation;
+                  if (destination != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DriverLiveMap(
+                          rideId: ride.id,
+                          destination: destination,
+                        ),
+                      ),
+                    );
+                  }
+                } else if (viewModel.errorMessage != null) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(viewModel.errorMessage!)),
+                  );
+                  viewModel.resetError();
+                }
+              },
+              onEnd: () async {
+                await viewModel.endRide(ride.id);
+                final messenger = ScaffoldMessenger.maybeOf(context);
+                if (messenger == null) return;
+                if (viewModel.errorMessage != null) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(viewModel.errorMessage!)),
+                  );
+                  viewModel.resetError();
+                } else {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('✅ Ride completed — tracking stopped.'),
+                    ),
+                  );
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestTile extends StatelessWidget {
+  final String rideId;
+  final RideRequest request;
+  final bool isHistory;
+
+  const _RequestTile({
+    required this.rideId,
+    required this.request,
+    required this.isHistory,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final viewModel = context.read<DriverRequestsViewModel>();
+    final userRepository = context.read<UserRepository>();
+
+    Color statusColor;
+    switch (request.status) {
+      case 'accepted':
+        statusColor = Colors.green;
+        break;
+      case 'rejected':
+        statusColor = Colors.red;
+        break;
+      default:
+        statusColor = Colors.orange;
+    }
+
+    return ListTile(
+      leading: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        future: userRepository.fetchRawUserDoc(request.riderId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return CircleAvatar(
+              backgroundColor: Colors.grey[300],
+              child: const Icon(Icons.person, color: Colors.white),
+            );
+          }
+
+          String? imageUrl;
+          if (snapshot.hasData && snapshot.data!.data() != null) {
+            imageUrl = snapshot.data!.data()!['profileImage'] as String?;
+          }
+
+          return CircleAvatar(
+            backgroundColor: Colors.grey[300],
+            backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+            child: imageUrl == null
+                ? const Icon(Icons.person, color: Colors.white)
+                : null,
+          );
+        },
+      ),
+      title: Text(request.riderName),
+      subtitle: Text('Status: ${request.status}'),
+      trailing: (!isHistory && request.status == 'pending')
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.check, color: Colors.green),
+                  onPressed: () async {
+                    await viewModel.acceptRequest(rideId, request.id);
+                    final messenger = ScaffoldMessenger.maybeOf(context);
+                    if (messenger == null) return;
+                    if (viewModel.errorMessage != null) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text(viewModel.errorMessage!)),
+                      );
+                      viewModel.resetError();
+                    } else {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Request accepted'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.red),
+                  onPressed: () async {
+                    await viewModel.rejectRequest(rideId, request.id);
+                    final messenger = ScaffoldMessenger.maybeOf(context);
+                    if (messenger == null) return;
+                    if (viewModel.errorMessage != null) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text(viewModel.errorMessage!)),
+                      );
+                      viewModel.resetError();
+                    } else {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ Request rejected'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            )
+          : null,
+    );
+  }
+}
+
+class _RideControls extends StatelessWidget {
+  final Ride ride;
+  final Future<void> Function() onStart;
+  final Future<void> Function() onEnd;
+
+  const _RideControls({
+    required this.ride,
+    required this.onStart,
+    required this.onEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        children: [
+          if (ride.status == 'open' || ride.status == 'full')
+            ElevatedButton.icon(
+              onPressed: onStart,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Start Ride'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          if (ride.status == 'ongoing') ...[
+            ElevatedButton.icon(
+              onPressed: onEnd,
+              icon: const Icon(Icons.flag),
+              label: const Text('End Ride'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: () {
+                final destination = ride.destinationLocation;
+                if (destination != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DriverLiveMap(
+                        rideId: ride.id,
+                        destination: destination,
+                      ),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('View Live Map'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.blueAccent,
+                side: const BorderSide(color: Colors.blueAccent),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

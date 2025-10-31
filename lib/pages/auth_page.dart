@@ -1,66 +1,57 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:mmcm_hits/pages/home.dart';
 import 'package:mmcm_hits/pages/login_or_signin_page.dart';
 import 'package:mmcm_hits/pages/email_verification_page.dart';
+import 'package:mmcm_hits/repositories/auth_repository.dart';
+import 'package:mmcm_hits/viewmodels/auth_viewmodel.dart';
+import 'package:provider/provider.dart';
 
-class AuthPage extends StatefulWidget {
+class AuthPage extends StatelessWidget {
   const AuthPage({super.key});
 
   @override
-  State<AuthPage> createState() => _AuthPageState();
+  Widget build(BuildContext context) {
+    final authRepository = context.read<AuthRepository>();
+    return ChangeNotifierProvider(
+      create: (_) => AuthViewModel(authRepository),
+      child: const _AuthView(),
+    );
+  }
 }
 
-class _AuthPageState extends State<AuthPage> {
-  final _auth = FirebaseAuth.instance;
-  bool _reloading = false;
-
-  Future<User?> _reloadAndGetUser() async {
-    final u = _auth.currentUser;
-    if (u == null) return null;
-    try {
-      setState(() => _reloading = true);
-      await u.reload(); // <-- ensure we aren’t using stale cached data
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => _reloading = false);
-    }
-    return _auth.currentUser;
-  }
+class _AuthView extends StatelessWidget {
+  const _AuthView();
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = context.watch<AuthViewModel>();
+
     return Scaffold(
       body: StreamBuilder<User?>(
-        // userChanges emits when reload() changes fields like emailVerified
-        stream: _auth.userChanges(),
+        stream: viewModel.authState,
         builder: (context, snapshot) {
-          // Not logged in -> go to login/signup
-          if (!snapshot.hasData) return const LoginOrSigninPage();
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          // Logged in: force a one-shot reload before deciding
-          return FutureBuilder<User?>(
-            future: _reloadAndGetUser(),
-            builder: (context, snap) {
-              final user = _auth.currentUser;
+          if (!snapshot.hasData) {
+            return const LoginOrSigninPage();
+          }
 
-              // Show a tiny loader while we force-refresh user state
-              if (snap.connectionState == ConnectionState.waiting ||
-                  _reloading) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          final user = snapshot.data!;
 
-              if (user == null) return const LoginOrSigninPage();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            viewModel.refreshUserIfNeeded(user);
+          });
 
-              // Gate strictly by emailVerified
-              if (!user.emailVerified) {
-                return const EmailVerificationPage();
-              }
+          final currentUser = viewModel.currentUser ?? user;
 
-              // Verified -> home
-              return const HomePage();
-            },
-          );
+          if (!(currentUser.emailVerified)) {
+            return const EmailVerificationPage();
+          }
+
+          return HomePage(uid: currentUser.uid);
         },
       ),
     );
