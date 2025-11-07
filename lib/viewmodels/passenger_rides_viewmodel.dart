@@ -82,4 +82,39 @@ class PassengerRidesViewModel extends BaseViewModel {
       setLoading(false);
     }
   }
+
+  bool shouldShowRide({
+    required Ride ride,
+    required RideRequest? request,
+    required bool isHistory,
+  }) {
+    final userId = _uid;
+    if (userId != null && ride.driverId == userId) {
+      return false;
+    }
+
+    final rideStatus = ride.status;
+    final requestStatus = request?.status;
+
+    if (isHistory) {
+      return requestStatus == 'accepted' && rideStatus == 'completed';
+    }
+
+    if (requestStatus == 'rejected') {
+      return false;
+    }
+
+    final hasRequest = request != null;
+    final isRideCompleted = rideStatus == 'completed';
+
+    if (hasRequest) {
+      final isAcceptedOrPending =
+          requestStatus == 'accepted' || requestStatus == 'pending';
+      return isAcceptedOrPending && !isRideCompleted;
+    }
+
+    final isRideOpen = rideStatus == 'open';
+    final hasSeats = ride.seatsAvailable > 0;
+    return isRideOpen && hasSeats;
+  }
 }

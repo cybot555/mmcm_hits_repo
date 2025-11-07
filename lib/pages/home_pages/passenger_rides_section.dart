@@ -133,26 +133,39 @@ class _RideCard extends StatelessWidget {
     return StreamBuilder<RideRequest?>(
       stream: viewModel.watchRequestForRide(ride.id),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final request = snapshot.data;
-        if (request == null) return const SizedBox.shrink();
+        RideRequest? request = snapshot.data;
+        var shouldRender = viewModel.shouldShowRide(
+          ride: ride,
+          request: request,
+          isHistory: isHistory,
+        );
+
+        if (!shouldRender &&
+            snapshot.connectionState == ConnectionState.waiting) {
+          shouldRender = viewModel.shouldShowRide(
+            ride: ride,
+            request: null,
+            isHistory: isHistory,
+          );
+          if (shouldRender) {
+            request = null;
+          }
+        }
+
+        if (!shouldRender) return const SizedBox.shrink();
 
         final rideStatus = ride.status;
-        final requestStatus = request.status;
+        final requestStatus = request?.status;
 
         final isAccepted = requestStatus == 'accepted';
         final isPending = requestStatus == 'pending';
         final isRejected = requestStatus == 'rejected';
         final isCompleted = rideStatus == 'completed';
-
-        if (isRejected) return const SizedBox.shrink();
-        if (isHistory) {
-          if (!(isAccepted && isCompleted)) return const SizedBox.shrink();
-        } else {
-          if (!(isAccepted || isPending) || isCompleted) {
-            return const SizedBox.shrink();
-          }
-        }
+        final isOngoing = rideStatus == 'ongoing';
+        final isOpen = rideStatus == 'open';
+        final isFull = rideStatus == 'full';
+        final hasSeats = ride.seatsAvailable > 0;
+        final hasRequest = request != null;
 
         final destination = ride.destinationName.isNotEmpty
             ? ride.destinationName
@@ -165,24 +178,37 @@ class _RideCard extends StatelessWidget {
         bool enabled = false;
         bool showTrack = false;
 
-        if (isCompleted) {
+        if (isHistory || isCompleted) {
           buttonColor = Colors.grey;
           buttonText = '✅ Ride Completed';
-        } else if (isAccepted && rideStatus == 'ongoing') {
+        } else if (isAccepted && isOngoing) {
           buttonColor = Colors.blueAccent;
           buttonText = '🚗 Ride In Progress';
           showTrack = true;
-        } else if (isAccepted && rideStatus == 'open') {
+        } else if (isAccepted && (isOpen || isFull)) {
           buttonColor = Colors.green;
           buttonText = 'Accepted ✅';
           showTrack = true;
         } else if (isPending) {
           buttonColor = Colors.orange;
           buttonText = 'Requested 🕒';
-        } else {
+        } else if (isRejected) {
+          buttonColor = Colors.redAccent;
+          buttonText = 'Request Rejected';
+        } else if (isOpen && hasSeats) {
           buttonColor = const Color(0xFF59E70C);
           buttonText = 'Request Ride';
           enabled = true;
+        } else if (isOngoing && hasRequest) {
+          buttonColor = Colors.blueAccent;
+          buttonText = '🚗 Ride In Progress';
+          showTrack = true;
+        } else if (!hasSeats || isFull) {
+          buttonColor = Colors.grey;
+          buttonText = 'Full';
+        } else {
+          buttonColor = Colors.grey;
+          buttonText = 'Unavailable';
         }
 
         return Card(

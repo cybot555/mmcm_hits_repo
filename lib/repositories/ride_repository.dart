@@ -5,11 +5,9 @@ import 'package:mmcm_hits/models/ride_request.dart';
 
 /// Data access for rides, ride requests, and live tracking.
 class RideRepository {
-  RideRepository(
-    FirebaseFirestore firestore,
-    FirebaseDatabase realtimeDb,
-  )   : _firestore = firestore,
-        _realtimeDb = realtimeDb;
+  RideRepository(FirebaseFirestore firestore, FirebaseDatabase realtimeDb)
+    : _firestore = firestore,
+      _realtimeDb = realtimeDb;
 
   final FirebaseFirestore _firestore;
   final FirebaseDatabase _realtimeDb;
@@ -21,12 +19,11 @@ class RideRepository {
       _realtimeDb.ref('activeRides/$rideId');
 
   Stream<List<Ride>> watchAllRides() {
-    return _rides
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map(Ride.fromDoc).toList();
-        });
+    return _rides.orderBy('createdAt', descending: true).snapshots().map((
+      snapshot,
+    ) {
+      return snapshot.docs.map(Ride.fromDoc).toList();
+    });
   }
 
   Future<Ride?> fetchRide(String rideId) async {
@@ -131,7 +128,7 @@ class RideRepository {
       final seats = seatsLeft is int
           ? seatsLeft
           : int.tryParse('$seatsLeft') ??
-              0; // guard against Firestore storing string
+                0; // guard against Firestore storing string
 
       if (seats <= 0) {
         throw StateError('No seats available');
