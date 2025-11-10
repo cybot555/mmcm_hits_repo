@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:mmcm_hits/components/ride_card_shell.dart';
 import 'package:mmcm_hits/models/ride.dart';
 import 'package:mmcm_hits/models/ride_request.dart';
 import 'package:mmcm_hits/pages/home_pages/hitcher_live_map.dart';
@@ -172,15 +173,19 @@ class _RideCard extends StatelessWidget {
             : 'Unknown Destination';
         final driverName =
             ride.driverName.isNotEmpty ? ride.driverName : 'Unknown Driver';
+        final rideNote = ride.message.trim();
 
         Color buttonColor;
-        String buttonText;
+        String? buttonText;
         bool enabled = false;
         bool showTrack = false;
+        bool showPrimaryAction = true;
+
+        const availableAccent = Color(0xFF22C55E);
 
         if (isHistory || isCompleted) {
           buttonColor = Colors.grey;
-          buttonText = '✅ Ride Completed';
+          showPrimaryAction = false;
         } else if (isAccepted && isOngoing) {
           buttonColor = Colors.blueAccent;
           buttonText = '🚗 Ride In Progress';
@@ -196,7 +201,7 @@ class _RideCard extends StatelessWidget {
           buttonColor = Colors.redAccent;
           buttonText = 'Request Rejected';
         } else if (isOpen && hasSeats) {
-          buttonColor = const Color(0xFF59E70C);
+          buttonColor = availableAccent;
           buttonText = 'Request Ride';
           enabled = true;
         } else if (isOngoing && hasRequest) {
@@ -211,77 +216,134 @@ class _RideCard extends StatelessWidget {
           buttonText = 'Unavailable';
         }
 
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 3,
-          child: Padding(
-            padding: const EdgeInsets.all(14.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _DriverHeader(driverId: ride.driverId, driverName: driverName),
-                const SizedBox(height: 10),
-                Text(
-                  destination,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+        final isAvailableStatus = !isHistory &&
+            !isCompleted &&
+            isOpen &&
+            hasSeats &&
+            !isAccepted &&
+            !isPending &&
+            !isRejected;
+        final statusLabel = _buildStatusLabel(
+            isHistory: isHistory,
+            isCompleted: isCompleted,
+            isAccepted: isAccepted,
+            isPending: isPending,
+            isRejected: isRejected,
+            isOngoing: isOngoing,
+            isOpen: isOpen,
+            hasSeats: hasSeats,
+        );
+        final statusChip = RideStatusChip(
+          label: statusLabel,
+          background: isAvailableStatus ? availableAccent : buttonColor,
+        );
+
+        return RideCardShell(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _DriverHeader(
+                      driverId: ride.driverId,
+                      driverName: driverName,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  statusChip,
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                destination,
+                style: RideCardStyles.title,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                formatRideDate(ride.createdAt),
+                style: RideCardStyles.subtitle,
+              ),
+              const SizedBox(height: 6),
+              if (rideNote.isNotEmpty) ...[
+                RideMessageNote(message: rideNote),
+                const SizedBox(height: 12),
+              ] else ...[
+                const SizedBox(height: 6),
+              ],
+              RideInfoRow(
+                icon: Icons.place_outlined,
+                label: 'From',
+                value: ride.origin.isNotEmpty ? ride.origin : 'Pickup pending',
+              ),
+              const SizedBox(height: 8),
+              RideInfoRow(
+                icon: Icons.event_seat_outlined,
+                label: 'Seats Left',
+                value: '${ride.seatsAvailable}',
+              ),
+              const SizedBox(height: 8),
+              RideInfoRow(
+                icon: Icons.directions_car_filled_outlined,
+                label: 'Vehicle',
+                value: buildVehicleLabel(
+                  ride.vehicleBrand,
+                  ride.vehiclePlate,
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (showPrimaryAction && buttonText != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: buttonColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: !enabled
+                        ? null
+                        : () async {
+                            final success =
+                                await viewModel.sendRideRequest(ride.id);
+                            final messenger =
+                                ScaffoldMessenger.maybeOf(context);
+                            if (messenger == null) return;
+                            if (success) {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('✅ Ride request sent!'),
+                                ),
+                              );
+                            } else if (viewModel.errorMessage != null) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(viewModel.errorMessage!),
+                                ),
+                              );
+                              viewModel.resetError();
+                            }
+                          },
+                    child: Text(buttonText!),
                   ),
                 ),
+              if (showTrack) ...[
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.confirmation_number, size: 18),
-                    const SizedBox(width: 6),
-                    Text('Seats left: ${ride.seatsAvailable}'),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.directions_car, size: 18),
-                    const SizedBox(width: 6),
-                    Text('Plate: ${ride.plateNumber}'),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: buttonColor,
-                    minimumSize: const Size.fromHeight(42),
-                  ),
-                  onPressed: !enabled
-                      ? null
-                      : () async {
-                          final success =
-                              await viewModel.sendRideRequest(ride.id);
-                          final messenger = ScaffoldMessenger.maybeOf(context);
-                          if (messenger == null) return;
-                          if (success) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('✅ Ride request sent!'),
-                              ),
-                            );
-                          } else if (viewModel.errorMessage != null) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(viewModel.errorMessage!),
-                              ),
-                            );
-                            viewModel.resetError();
-                          }
-                        },
-                  child: Text(
-                    buttonText,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-                if (showTrack)
-                  TextButton.icon(
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      side: BorderSide(color: buttonColor.withOpacity(0.7)),
+                      foregroundColor: buttonColor.darken(),
+                    ),
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -290,17 +352,42 @@ class _RideCard extends StatelessWidget {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.map),
+                    icon: const Icon(Icons.map_outlined),
                     label: const Text('Track Ride'),
                   ),
-                if (isHistory) _CompletedRideInfo(rideId: ride.id),
+                ),
               ],
-            ),
+              if (isHistory) ...[
+                const SizedBox(height: 18),
+                const Divider(),
+                const SizedBox(height: 12),
+                _CompletedRideInfo(rideId: ride.id),
+              ],
+            ],
           ),
         );
       },
     );
   }
+}
+
+String _buildStatusLabel({
+  required bool isHistory,
+  required bool isCompleted,
+  required bool isAccepted,
+  required bool isPending,
+  required bool isRejected,
+  required bool isOngoing,
+  required bool isOpen,
+  required bool hasSeats,
+}) {
+  if (isHistory || isCompleted) return 'Completed';
+  if (isAccepted && isOngoing) return 'In Progress';
+  if (isAccepted && (isOpen || !hasSeats)) return 'Accepted';
+  if (isPending) return 'Pending';
+  if (isRejected) return 'Rejected';
+  if (isOpen && hasSeats) return 'Available';
+  return 'Unavailable';
 }
 
 class _DriverHeader extends StatelessWidget {

@@ -27,6 +27,7 @@ class CreateRideViewModel extends BaseViewModel {
   bool _isPosting = false;
   bool _isLocating = false;
   String _destinationLabel = '';
+  String _message = '';
 
   LatLng? get currentLocation => _currentLocation;
   LatLng? get destination => _destination;
@@ -35,6 +36,7 @@ class CreateRideViewModel extends BaseViewModel {
   bool get isPosting => _isPosting;
   bool get isLocating => _isLocating;
   String get destinationLabel => _destinationLabel;
+  String get message => _message;
 
   Future<void> determinePosition() async {
     _isLocating = true;
@@ -118,6 +120,14 @@ class CreateRideViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  void updateMessage(String value) {
+    final trimmedValue =
+        value.length > 100 ? value.substring(0, 100) : value;
+    if (trimmedValue == _message) return;
+    _message = trimmedValue;
+    notifyListeners();
+  }
+
   Future<void> _reverseGeocode(LatLng point) async {
     final url =
         'https://nominatim.openstreetmap.org/reverse?lat=${point.latitude}&lon=${point.longitude}&format=json';
@@ -190,10 +200,22 @@ class CreateRideViewModel extends BaseViewModel {
         return false;
       }
 
+      String vehicleBrand = (userData['carBrand'] ?? '').toString().trim();
+      final otherBrand = (userData['otherBrand'] ?? '').toString().trim();
+      if (vehicleBrand.isEmpty || vehicleBrand.toLowerCase() == 'others') {
+        vehicleBrand = otherBrand;
+      }
+      final rawPlate = (userData['plateNumber'] ?? '').toString().trim();
+      final plateNumber = rawPlate.isEmpty ? 'Unknown Plate' : rawPlate;
+
       final rideData = {
         'driverId': user.uid,
         'driverName': userData['email'] ?? 'Unknown Driver',
-        'plateNumber': userData['plateNumber'] ?? 'Unknown Plate',
+        'plateNumber': plateNumber,
+        'vehicle': {
+          'brand': vehicleBrand,
+          'plate': plateNumber,
+        },
         'origin': 'MMCM Campus',
         'destinationName': _destinationLabel,
         'destinationLocation': GeoPoint(
@@ -207,6 +229,7 @@ class CreateRideViewModel extends BaseViewModel {
           ),
         'seatsAvailable': _selectedSeats,
         'status': 'open',
+        'message': _message.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -215,6 +238,7 @@ class CreateRideViewModel extends BaseViewModel {
       _destination = null;
       _destinationLabel = '';
       _selectedSeats = null;
+      _message = '';
       notifyListeners();
       return true;
     } catch (e) {

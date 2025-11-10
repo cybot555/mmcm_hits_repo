@@ -18,12 +18,14 @@ class MapPage extends StatefulWidget {
 class _MapPageState extends State<MapPage> {
   final MapController _mapController = MapController();
   final TextEditingController _destinationController = TextEditingController();
+  final TextEditingController _messageController = TextEditingController();
   LatLng? _lastCurrent;
   LatLng? _lastDestination;
 
   @override
   void dispose() {
     _destinationController.dispose();
+    _messageController.dispose();
     super.dispose();
   }
 
@@ -173,6 +175,23 @@ class _MapPageState extends State<MapPage> {
                           onChanged: viewModel.updateSeats,
                         ),
                         const SizedBox(height: 10),
+                        TextField(
+                          controller: _messageController,
+                          maxLength: 100,
+                          minLines: 1,
+                          maxLines: 2,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: 'Note',
+                            hintText: 'Add a quick note for hitchers',
+                            counterText: '',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onChanged: viewModel.updateMessage,
+                        ),
+                        const SizedBox(height: 10),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             minimumSize: const Size.fromHeight(45),
@@ -208,6 +227,7 @@ class _MapPageState extends State<MapPage> {
                                       ),
                                     );
                                     _destinationController.clear();
+                                    _messageController.clear();
                                   } else if (viewModel.errorMessage != null) {
                                     messenger.showSnackBar(
                                       SnackBar(
@@ -237,6 +257,13 @@ class _MapPageState extends State<MapPage> {
     if (label.isNotEmpty &&
         _destinationController.text.trim() != label.trim()) {
       _destinationController.text = label;
+    }
+
+    final note = viewModel.message;
+    if (_messageController.text != note) {
+      _messageController
+        ..text = note
+        ..selection = TextSelection.collapsed(offset: note.length);
     }
   }
 

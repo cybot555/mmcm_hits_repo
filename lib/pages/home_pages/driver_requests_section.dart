@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:mmcm_hits/components/ride_card_shell.dart';
 import 'package:mmcm_hits/models/ride.dart';
 import 'package:mmcm_hits/models/ride_request.dart';
 import 'package:mmcm_hits/pages/home_pages/driver_live_map.dart';
@@ -97,6 +98,7 @@ class _DriverRideList extends StatelessWidget {
         }
 
         return ListView.builder(
+          padding: const EdgeInsets.only(top: 10, bottom: 20),
           itemCount: rides.length,
           itemBuilder: (context, index) {
             final ride = rides[index];
@@ -120,68 +122,128 @@ class _DriverRideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final viewModel = context.read<DriverRequestsViewModel>();
-    final destination =
-        ride.destinationName.isNotEmpty ? ride.destinationName : 'Unknown';
+    final destination = ride.destinationName.isNotEmpty
+        ? ride.destinationName
+        : 'Unknown destination';
+    final statusLabel = _driverStatusLabel(ride.status, isHistory);
+    final statusColor = _driverStatusColor(ride.status, isHistory);
+    final rideNote = ride.message.trim();
 
-    return Card(
-      margin: const EdgeInsets.all(10),
-      elevation: 3,
-      child: ExpansionTile(
-        title: Text(
-          destination,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: Text('Seats available: ${ride.seatsAvailable}'),
+    return RideCardShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(destination, style: RideCardStyles.title),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatRideDate(ride.createdAt),
+                      style: RideCardStyles.subtitle,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              RideStatusChip(
+                label: statusLabel,
+                background: statusColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (rideNote.isNotEmpty) ...[
+            RideMessageNote(message: rideNote),
+            const SizedBox(height: 12),
+          ] else ...[
+            const SizedBox(height: 4),
+          ],
+          RideInfoRow(
+            icon: Icons.place_outlined,
+            label: 'From',
+            value: ride.origin.isNotEmpty ? ride.origin : 'Pickup pending',
+          ),
+          const SizedBox(height: 8),
+          RideInfoRow(
+            icon: Icons.event_seat_outlined,
+            label: 'Seats Left',
+            value: '${ride.seatsAvailable}',
+          ),
+          const SizedBox(height: 8),
+          RideInfoRow(
+            icon: Icons.directions_car_filled_outlined,
+            label: 'Vehicle',
+            value: buildVehicleLabel(
+              ride.vehicleBrand,
+              ride.vehiclePlate,
+            ),
+          ),
+          const SizedBox(height: 18),
           StreamBuilder<List<RideRequest>>(
             stream: viewModel.watchRideRequests(ride.id),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text('Error: ${snapshot.error}'),
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    'Error: ${snapshot.error}',
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 );
               }
               if (!snapshot.hasData) {
                 return const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(),
+                  padding: EdgeInsets.symmetric(vertical: 12.0),
+                  child: Center(child: CircularProgressIndicator()),
                 );
               }
 
               final requests = snapshot.data!;
-              if (requests.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text('No requests yet.'),
-                );
-              }
-
               final acceptedCount = requests
                   .where((req) => req.status == 'accepted')
                   .length;
 
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ...requests.map(
-                    (request) => _RequestTile(
-                      rideId: ride.id,
-                      request: request,
-                      isHistory: isHistory,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Passenger Requests',
+                          style: RideCardStyles.meta.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (isHistory)
+                        Text(
+                          '$acceptedCount passenger(s)',
+                          style: RideCardStyles.subtitle,
+                        ),
+                    ],
                   ),
-                  if (isHistory)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(
-                        '✅ Ride Completed — $acceptedCount passenger(s)',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(height: 12),
+                  if (requests.isEmpty)
+                    Text(
+                      isHistory
+                          ? 'No passengers joined this ride.'
+                          : 'No requests yet.',
+                      style: RideCardStyles.subtitle,
+                    )
+                  else
+                    ...requests.map(
+                      (request) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _RequestTile(
+                          rideId: ride.id,
+                          request: request,
+                          isHistory: isHistory,
                         ),
                       ),
                     ),
@@ -189,8 +251,10 @@ class _DriverRideCard extends StatelessWidget {
               );
             },
           ),
-          const Divider(),
-          if (!isHistory)
+          if (!isHistory) ...[
+            const SizedBox(height: 18),
+            const Divider(),
+            const SizedBox(height: 12),
             _RideControls(
               ride: ride,
               onStart: () async {
@@ -241,9 +305,34 @@ class _DriverRideCard extends StatelessWidget {
                 }
               },
             ),
+          ],
         ],
       ),
     );
+  }
+}
+
+String _driverStatusLabel(String status, bool isHistory) {
+  if (isHistory || status == 'completed') return 'Completed';
+  if (status == 'ongoing') return 'In Progress';
+  if (status == 'full') return 'Full';
+  if (status == 'open') return 'Accepting';
+  return status.isEmpty ? 'Pending' : _capitalize(status);
+}
+
+Color _driverStatusColor(String status, bool isHistory) {
+  if (isHistory || status == 'completed') {
+    return Colors.grey;
+  }
+  switch (status) {
+    case 'ongoing':
+      return Colors.blueAccent;
+    case 'full':
+      return const Color(0xFF7C3AED);
+    case 'open':
+      return const Color(0xFF22C55E);
+    default:
+      return Colors.orange;
   }
 }
 
@@ -275,40 +364,68 @@ class _RequestTile extends StatelessWidget {
         statusColor = Colors.orange;
     }
 
-    return ListTile(
-      leading: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: userRepository.fetchRawUserDoc(request.riderId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return CircleAvatar(
-              backgroundColor: Colors.grey[300],
-              child: const Icon(Icons.person, color: Colors.white),
-            );
-          }
-
-          String? imageUrl;
-          if (snapshot.hasData && snapshot.data!.data() != null) {
-            imageUrl = snapshot.data!.data()!['profileImage'] as String?;
-          }
-
-          return CircleAvatar(
-            backgroundColor: Colors.grey[300],
-            backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-            child: imageUrl == null
-                ? const Icon(Icons.person, color: Colors.white)
-                : null,
-          );
-        },
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.05)),
       ),
-      title: Text(request.riderName),
-      subtitle: Text('Status: ${request.status}'),
-      trailing: (!isHistory && request.status == 'pending')
-          ? Row(
+      child: Row(
+        children: [
+          FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            future: userRepository.fetchRawUserDoc(request.riderId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return CircleAvatar(
+                  backgroundColor: Colors.grey[300],
+                  child: const Icon(Icons.person, color: Colors.white),
+                );
+              }
+
+              String? imageUrl;
+              if (snapshot.hasData && snapshot.data!.data() != null) {
+                imageUrl = snapshot.data!.data()!['profileImage'] as String?;
+              }
+
+              return CircleAvatar(
+                backgroundColor: Colors.grey[300],
+                backgroundImage:
+                    imageUrl != null ? NetworkImage(imageUrl) : null,
+                child: imageUrl == null
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              );
+            },
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.riderName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                RideStatusChip(
+                  label: _capitalize(request.status),
+                  background: statusColor,
+                ),
+              ],
+            ),
+          ),
+          if (!isHistory && request.status == 'pending')
+            Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.check, color: Colors.green),
-                  onPressed: () async {
+                _RequestActionButton(
+                  icon: Icons.check,
+                  color: Colors.green,
+                  onTap: () async {
                     await viewModel.acceptRequest(rideId, request.id);
                     final messenger = ScaffoldMessenger.maybeOf(context);
                     if (messenger == null) return;
@@ -326,9 +443,11 @@ class _RequestTile extends StatelessWidget {
                     }
                   },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.red),
-                  onPressed: () async {
+                const SizedBox(width: 6),
+                _RequestActionButton(
+                  icon: Icons.close,
+                  color: Colors.red,
+                  onTap: () async {
                     await viewModel.rejectRequest(rideId, request.id);
                     final messenger = ScaffoldMessenger.maybeOf(context);
                     if (messenger == null) return;
@@ -347,10 +466,48 @@ class _RequestTile extends StatelessWidget {
                   },
                 ),
               ],
-            )
-          : null,
+            ),
+        ],
+      ),
     );
   }
+}
+
+class _RequestActionButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final Future<void> Function() onTap;
+
+  const _RequestActionButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      width: 40,
+      child: IconButton(
+        style: IconButton.styleFrom(
+          foregroundColor: color,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: () {
+          onTap();
+        },
+        icon: Icon(icon),
+      ),
+    );
+  }
+}
+
+String _capitalize(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1);
 }
 
 class _RideControls extends StatelessWidget {
@@ -366,32 +523,47 @@ class _RideControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Column(
-        children: [
-          if (ride.status == 'open' || ride.status == 'full')
-            ElevatedButton.icon(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (ride.status == 'open' || ride.status == 'full')
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
               onPressed: onStart,
               icon: const Icon(Icons.play_arrow),
               label: const Text('Start Ride'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blueAccent,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
-          if (ride.status == 'ongoing') ...[
-            ElevatedButton.icon(
+          ),
+        if (ride.status == 'ongoing') ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
               onPressed: onEnd,
               icon: const Icon(Icons.flag),
               label: const Text('End Ride'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
-            const SizedBox(height: 6),
-            OutlinedButton.icon(
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
               onPressed: () {
                 final destination = ride.destinationLocation;
                 if (destination != null) {
@@ -409,13 +581,17 @@ class _RideControls extends StatelessWidget {
               icon: const Icon(Icons.map_outlined),
               label: const Text('View Live Map'),
               style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 foregroundColor: Colors.blueAccent,
                 side: const BorderSide(color: Colors.blueAccent),
               ),
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }
