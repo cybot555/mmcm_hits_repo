@@ -12,8 +12,8 @@ class EmailVerificationViewModel extends BaseViewModel {
   bool _emailSent = false;
   bool _canResend = true;
   bool _isSending = false;
-  Timer? _pollTimer;
   bool _isVerified = false;
+  bool _requestedInitialEmail = false;
 
   bool get emailSent => _emailSent;
   bool get canResend => _canResend;
@@ -22,6 +22,12 @@ class EmailVerificationViewModel extends BaseViewModel {
 
   User? get currentUser => _authRepository.currentUser;
 
+  Future<void> ensureInitialEmailSent() async {
+    if (_requestedInitialEmail) return;
+    _requestedInitialEmail = true;
+    await sendVerificationEmail();
+  }
+
   Future<void> sendVerificationEmail({bool forceResend = false}) async {
     if (_isSending) return;
     if (!forceResend && _emailSent) return;
@@ -29,13 +35,25 @@ class EmailVerificationViewModel extends BaseViewModel {
     _isSending = true;
     notifyListeners();
 
+    if (_authRepository.currentUser == null) {
+      if (!forceResend) {
+        _requestedInitialEmail = false;
+      }
+      _isSending = false;
+      setError('Please sign in again to request a verification email.');
+      notifyListeners();
+      return;
+    }
+
     try {
       await _authRepository.sendVerificationEmail();
       _emailSent = true;
       _isSending = false;
       notifyListeners();
-      _startPolling();
     } catch (e) {
+      if (!forceResend) {
+        _requestedInitialEmail = false;
+      }
       _isSending = false;
       setError('Failed to send verification email.');
       notifyListeners();
@@ -57,33 +75,11 @@ class EmailVerificationViewModel extends BaseViewModel {
   Future<bool> checkIfVerified() async {
     final refreshed = await _authRepository.refreshCurrentUser();
     if (refreshed?.emailVerified ?? false) {
-      _stopPolling();
       _isVerified = true;
       notifyListeners();
       return true;
     }
     return false;
-  }
-
-  void _startPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      final verified = await checkIfVerified();
-      if (verified) {
-        _stopPolling();
-      }
-    });
-  }
-
-  void _stopPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = null;
-  }
-
-  @override
-  void dispose() {
-    _stopPolling();
-    super.dispose();
   }
 
   Future<void> signOut() => _authRepository.signOut();

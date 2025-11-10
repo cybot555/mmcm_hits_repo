@@ -3,7 +3,6 @@ import 'package:mmcm_hits/components/my_textfield.dart';
 import 'package:mmcm_hits/components/my_college_dropdown.dart';
 import 'package:mmcm_hits/components/driver_or_rider.dart';
 import 'package:mmcm_hits/components/driver_verification.dart';
-import 'package:mmcm_hits/pages/email_verification_page.dart';
 import 'package:mmcm_hits/repositories/auth_repository.dart';
 import 'package:mmcm_hits/repositories/storage_repository.dart';
 import 'package:mmcm_hits/repositories/user_repository.dart';
@@ -40,12 +39,7 @@ class _SignupPageState extends State<SignupPage> {
 
     if (!mounted) return;
 
-    if (success) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const EmailVerificationPage()),
-      );
-    } else if (viewModel.errorMessage != null) {
+    if (!success && viewModel.errorMessage != null) {
       _showError(viewModel.errorMessage!);
       viewModel.resetError();
     }

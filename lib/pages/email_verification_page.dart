@@ -12,8 +12,7 @@ class EmailVerificationPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final authRepository = context.read<AuthRepository>();
     return ChangeNotifierProvider(
-      create: (_) =>
-          EmailVerificationViewModel(authRepository)..sendVerificationEmail(),
+      create: (_) => EmailVerificationViewModel(authRepository),
       child: const _EmailVerificationView(),
     );
   }
@@ -28,6 +27,20 @@ class _EmailVerificationView extends StatefulWidget {
 
 class _EmailVerificationViewState extends State<_EmailVerificationView> {
   bool _navigated = false;
+  EmailVerificationViewModel? _lastViewModel;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final viewModel = context.read<EmailVerificationViewModel>();
+    if (!identical(_lastViewModel, viewModel)) {
+      _lastViewModel = viewModel;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        viewModel.ensureInitialEmailSent();
+      });
+    }
+  }
 
   void _showMessage(String message, {bool success = true}) {
     if (!mounted) return;

@@ -124,8 +124,6 @@ class SignupViewModel extends BaseViewModel {
         });
       }
 
-      await _authRepository.sendVerificationEmail();
-      await _authRepository.signOut();
       return true;
     } on FirebaseAuthException catch (e) {
       setError(e.message ?? 'Signup failed.');
