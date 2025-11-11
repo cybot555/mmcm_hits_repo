@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:mmcm_hits/repositories/ride_repository.dart';
@@ -19,80 +19,53 @@ class DriverLiveMapViewModel extends BaseViewModel {
   final String rideId;
   final GeoPoint destination;
 
-  LatLng? _currentPosition;
+  LatLng? _driverPosition;
+  LatLng? _destination;
   List<LatLng> _routePoints = [];
+  bool _rideCompleted = false;
 
-  StreamSubscription<Position>? _subscription;
+  StreamSubscription<DatabaseEvent>? _subscription;
 
-  LatLng? get currentPosition => _currentPosition;
+  LatLng? get driverPosition => _driverPosition;
+  LatLng? get destinationLatLng => _destination;
   List<LatLng> get routePoints => _routePoints;
+  bool get rideCompleted => _rideCompleted;
 
   Future<void> initialise() async {
-    final hasPermission = await _ensurePermission();
-    if (!hasPermission) {
-      setError('Location permission denied.');
-      return;
-    }
+    _destination = LatLng(destination.latitude, destination.longitude);
+    notifyListeners();
 
-    try {
-      final initialPos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      _currentPosition = LatLng(initialPos.latitude, initialPos.longitude);
-      notifyListeners();
+    _subscription = _rideRepository.watchDriverLocation(rideId).listen(
+      (event) async {
+        final value = event.snapshot.value;
+        if (value == null) {
+          _rideCompleted = true;
+          notifyListeners();
+          return;
+        }
 
-      await _drawRoute();
-      _startTracking();
-    } catch (e) {
-      setError('Unable to start tracking.');
-    }
-  }
-
-  Future<bool> _ensurePermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return false;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return false;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      return false;
-    }
-    return true;
-  }
-
-  void _startTracking() {
-    _subscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((pos) {
-      _currentPosition = LatLng(pos.latitude, pos.longitude);
-      notifyListeners();
-      _rideRepository.setDriverLocation(
-        rideId,
-        lat: pos.latitude,
-        lng: pos.longitude,
-      );
-    });
+        if (value is Map) {
+          final lat = (value['lat'] as num?)?.toDouble();
+          final lng = (value['lng'] as num?)?.toDouble();
+          if (lat != null && lng != null) {
+            _driverPosition = LatLng(lat, lng);
+            _rideCompleted = false;
+            notifyListeners();
+            await _drawRoute();
+          }
+        }
+      },
+    );
   }
 
   Future<void> _drawRoute() async {
-    if (_currentPosition == null) return;
+    if (_driverPosition == null || _destination == null) return;
+    if (_routePoints.isNotEmpty) return;
 
     final url =
         'https://router.project-osrm.org/route/v1/driving/'
-        '${_currentPosition!.longitude},${_currentPosition!.latitude};'
-        '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+        '${_driverPosition!.longitude},${_driverPosition!.latitude};'
+        '${_destination!.longitude},${_destination!.latitude}?overview=full&geometries=geojson';
 
     try {
       final response = await http

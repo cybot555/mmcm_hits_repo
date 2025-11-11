@@ -46,11 +46,11 @@ class _DriverLiveMapViewState extends State<_DriverLiveMapView> {
   Widget build(BuildContext context) {
     return Consumer<DriverLiveMapViewModel>(
       builder: (context, viewModel, _) {
-        if (viewModel.currentPosition != null &&
-            viewModel.currentPosition != _lastCenter) {
-          _lastCenter = viewModel.currentPosition;
+        if (viewModel.driverPosition != null &&
+            viewModel.driverPosition != _lastCenter) {
+          _lastCenter = viewModel.driverPosition;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            final center = viewModel.currentPosition!;
+            final center = viewModel.driverPosition!;
             _mapController.move(center, _mapController.camera.zoom);
           });
         }
@@ -66,18 +66,33 @@ class _DriverLiveMapViewState extends State<_DriverLiveMapView> {
           });
         }
 
+        if (viewModel.rideCompleted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final navigator = Navigator.of(context);
+            if (navigator.canPop()) {
+              navigator.pop();
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              messenger?.showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Ride completed — tracking stopped.'),
+                ),
+              );
+            }
+          });
+        }
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Live Ride Tracking'),
             backgroundColor: Colors.green,
             foregroundColor: Colors.white,
           ),
-          body: viewModel.currentPosition == null
+          body: viewModel.driverPosition == null
               ? const Center(child: CircularProgressIndicator())
               : FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
-                    initialCenter: viewModel.currentPosition!,
+                    initialCenter: viewModel.driverPosition!,
                     initialZoom: 15,
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
@@ -103,7 +118,7 @@ class _DriverLiveMapViewState extends State<_DriverLiveMapView> {
                     MarkerLayer(
                       markers: [
                         Marker(
-                          point: viewModel.currentPosition!,
+                          point: viewModel.driverPosition!,
                           width: 50,
                           height: 50,
                           child: const Icon(
@@ -112,19 +127,17 @@ class _DriverLiveMapViewState extends State<_DriverLiveMapView> {
                             size: 38,
                           ),
                         ),
-                        Marker(
-                          point: LatLng(
-                            viewModel.destination.latitude,
-                            viewModel.destination.longitude,
+                        if (viewModel.destinationLatLng != null)
+                          Marker(
+                            point: viewModel.destinationLatLng!,
+                            width: 50,
+                            height: 50,
+                            child: const Icon(
+                              Icons.location_pin,
+                              color: Colors.red,
+                              size: 42,
+                            ),
                           ),
-                          width: 50,
-                          height: 50,
-                          child: const Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 42,
-                          ),
-                        ),
                       ],
                     ),
                   ],
