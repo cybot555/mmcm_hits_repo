@@ -17,6 +17,7 @@ class HitcherLiveMapViewModel extends BaseViewModel {
   LatLng? _destination;
   List<LatLng> _routePoints = [];
   bool _rideCompleted = false;
+  bool _hasReceivedDriverLocation = false;
 
   StreamSubscription<DatabaseEvent>? _subscription;
 
@@ -27,12 +28,17 @@ class HitcherLiveMapViewModel extends BaseViewModel {
 
   Future<void> initialise() async {
     final ride = await _rideRepository.fetchRide(rideId);
-    if (ride?.destinationLocation != null) {
-      final geo = ride!.destinationLocation!;
-      _destination = LatLng(geo.latitude, geo.longitude);
-      notifyListeners();
-    } else {
+    if (ride == null || ride.destinationLocation == null) {
       setError('Ride not found.');
+      return;
+    }
+
+    final geo = ride.destinationLocation!;
+    _destination = LatLng(geo.latitude, geo.longitude);
+    _rideCompleted = ride.status == 'completed';
+    notifyListeners();
+
+    if (_rideCompleted) {
       return;
     }
 
@@ -40,8 +46,10 @@ class HitcherLiveMapViewModel extends BaseViewModel {
       (event) async {
         final value = event.snapshot.value;
         if (value == null) {
-          _rideCompleted = true;
-          notifyListeners();
+          if (_hasReceivedDriverLocation) {
+            _rideCompleted = true;
+            notifyListeners();
+          }
           return;
         }
 
@@ -50,6 +58,7 @@ class HitcherLiveMapViewModel extends BaseViewModel {
           final lng = (value['lng'] as num?)?.toDouble();
           if (lat != null && lng != null) {
             _driverPosition = LatLng(lat, lng);
+            _hasReceivedDriverLocation = true;
             notifyListeners();
             await _drawRoute();
           }
